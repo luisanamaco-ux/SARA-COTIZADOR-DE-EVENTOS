@@ -1,4 +1,4 @@
-<title>Control del Aniversario RAE</title>
+<title>Cotizador de Eventos</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -76,17 +76,22 @@ ul.msg{padding-left:18px;margin:0}
   body{background:#fff;color:#000;padding:0}
   .card,.sub{border:1px solid #bbb;box-shadow:none;break-inside:avoid}
   th{color:#000}
+  header.top,#nav,#evNombre,#evMeta{display:none!important}
+  main,.wrap{padding:0!important;margin:0!important;max-width:none!important}
+  .card{break-inside:auto}
+  .sub,tr,details.det>summary{break-inside:avoid}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 <header class="top">
   <div class="wrap">
-    <p class="eyebrow">Control de evento</p>
-    <h1 id="evNombre"></h1>
+    <p class="eyebrow">Cotizador de Eventos</p>
+    <h1 id="evNombre" hidden></h1>
     <p class="meta" id="evMeta"></p>
     <div class="row no-print" style="margin-top:10px">
       <button data-act="descargarRespaldo">Descargar respaldo</button>
+      <button data-act="datosToggle">Datos del cliente y evento</button>
       <button class="primary" data-act="elegirArchivo">Cargar datos</button>
       <input type="file" id="archivo" accept=".json,application/json" hidden>
     </div>
@@ -98,7 +103,7 @@ ul.msg{padding-left:18px;margin:0}
 <datalist id="cats"></datalist>
 
 <script>
-const DEF={evento:{nombre:'Aniversario RAE',fecha:'',lugar:'',invitados:0,presupuesto:0,inicio:'09:00'},cronograma:[],gastos:[],proveedores:[],comentarios:[],partidas:[{id:'local-generales',nombre:'Local y costos generales'}],catalogo:[
+const DEF={cliente:{nombre:'',empresa:'',ruc:'',contacto:'',telefono:'',correo:''},evento:{nombre:'',fecha:'',lugar:'',invitados:0,presupuesto:0,inicio:'09:00'},cronograma:[],gastos:[],proveedores:[],comentarios:[],partidas:[{id:'local-generales',nombre:'Local y costos generales'}],catalogo:[
   {cat:'CATERING',subs:['Bocaditos','Platos de fondo','Platos de cena','Bebidas','Torta']},
   {cat:'DECORACIÓN E INFRAESTRUCTURA',subs:['Alquiler de equipo de sonido','Alquiler de equipo para grupo','Alquiler de luces','Tarima','Banner','Decoración general','Menaje']},
   {cat:'SHOW',subs:['Grupo musical','Grupo digital','Animación','Grupo de Danza','StandUp Comedy','MULTIMEDIA']},
@@ -108,7 +113,7 @@ const KEY='evento-rae-v1';
 const TABS=[['resumen','Resumen'],['cronograma','Cronograma'],['gastos','Gastos'],['proveedores','Proveedores'],['presupuesto','Presupuesto final'],['cotizacion','Cotización cliente'],['comentarios','Comentarios'],['ajustes','Ajustes']];
 const CATS=['Local','Catering','Música y sonido','Decoración','Audio y video','Personal','Transporte','Invitaciones','Premios y obsequios','Imprevistos'];
 const ESTADOS=['Pendiente','En curso','Listo'];
-let tab='resumen', armed=false, msg='', abierto=null, cargaProv=null, editando=null, picks={};
+let tab='resumen', armed=false, msg='', abierto=null, cargaProv=null, editando=null, picks={}, datosAbierto=false;
 
 function merge(o){const d=structuredClone(DEF);return Object.assign(d,o,{evento:Object.assign(d.evento,(o&&o.evento)||{})});}
 function load(){try{
@@ -680,6 +685,30 @@ function vPresupuestoDetallado(){
 
 /* Cotización para el cliente: solo categorías y subcategorías con su monto, sin proveedores ni costos internos. */
 /* Cada subcategoría se despliega para ver sus ítems y gastos (sin nombres de proveedor). */
+/* Formulario de datos del cliente y del evento (se abre desde el encabezado). */
+function vDatos(){
+  const c=S.cliente||{}, e=S.evento;
+  const f=(n,l,v,t='text',extra='')=>`<label style="flex-basis:240px">${l}<input name="${n}" type="${t}" value="${esc(v)}" ${extra}></label>`;
+  return `<div class="card" style="margin-top:12px">
+    <h2 style="margin-top:0">Datos del cliente y del evento</h2>
+    <form class="row" data-form="datos">
+      <p class="msg" style="flex-basis:100%"><b>Cliente</b></p>
+      ${f('cliente','Nombre del cliente',c.nombre)}
+      ${f('empresa','Empresa',c.empresa)}
+      ${f('ruc','RUC / DNI',c.ruc)}
+      ${f('contacto','Persona de contacto',c.contacto)}
+      ${f('telefono','Teléfono',c.telefono)}
+      ${f('correo','Correo',c.correo,'email')}
+      <p class="msg" style="flex-basis:100%;margin-top:8px"><b>Evento</b></p>
+      ${f('nombreEvento','Nombre del evento',e.nombre)}
+      ${f('fecha','Fecha',e.fecha,'date')}
+      ${f('lugar','Lugar',e.lugar)}
+      ${f('invitados','Invitados',e.invitados,'number','min="0" step="1"')}
+      <div class="row" style="flex-basis:100%;margin-top:8px"><button class="primary" type="submit">Guardar datos</button><button type="button" data-act="datosToggle">Cerrar</button></div>
+    </form>
+  </div>`;
+}
+
 window.addEventListener('beforeprint',()=>document.querySelectorAll('details.det').forEach(d=>d.open=true));
 function vCotizacion(){
   const L=lineasDetalle(), porSub={};
@@ -713,6 +742,7 @@ function vCotizacion(){
   <div class="card" style="margin-top:12px">
     <h1 style="font-size:20px;margin:0">${esc(S.evento.nombre)||'Evento'}</h1>
     <p class="msg">${esc(fmtFecha(S.evento.fecha))||'Fecha por definir'} · ${Number(S.evento.invitados)||0} invitados · ${esc(S.evento.lugar)||'Lugar por definir'}</p>
+    <p class="msg" style="margin-top:6px"><b>Cliente:</b> ${esc((S.cliente||{}).nombre)||'Por definir'}${(S.cliente||{}).empresa?' · '+esc(S.cliente.empresa):''}${(S.cliente||{}).ruc?' · RUC/DNI '+esc(S.cliente.ruc):''}${(S.cliente||{}).contacto?' · Contacto: '+esc(S.cliente.contacto):''}${(S.cliente||{}).telefono?' · Tel. '+esc(S.cliente.telefono):''}${(S.cliente||{}).correo?' · '+esc(S.cliente.correo):''}</p>
   </div>
   ${bloques}
   ${sinClas?`<div class="card no-print" style="margin-top:12px"><b>Por clasificar</b><p class="msg">Estos ítems aún no tienen subcategoría y no suman a la cotización.</p>${fila('','Sin subcategoría')}</div>`:''}
@@ -742,6 +772,7 @@ function vCotizacionAnterior(){
   <div class="card" style="margin-top:12px">
     <h1 style="font-size:20px;margin:0">${esc(S.evento.nombre)||'Evento'}</h1>
     <p class="msg">${esc(fmtFecha(S.evento.fecha))||'Fecha por definir'} · ${Number(S.evento.invitados)||0} invitados · ${esc(S.evento.lugar)||'Lugar por definir'}</p>
+    <p class="msg" style="margin-top:6px"><b>Cliente:</b> ${esc((S.cliente||{}).nombre)||'Por definir'}${(S.cliente||{}).empresa?' · '+esc(S.cliente.empresa):''}${(S.cliente||{}).ruc?' · RUC/DNI '+esc(S.cliente.ruc):''}${(S.cliente||{}).contacto?' · Contacto: '+esc(S.cliente.contacto):''}${(S.cliente||{}).telefono?' · Tel. '+esc(S.cliente.telefono):''}${(S.cliente||{}).correo?' · '+esc(S.cliente.correo):''}</p>
   </div>
   ${bloques}
   ${sinClas?`<p class="msg no-print" style="margin-top:12px">Pendiente de clasificar: ${money(sinClas)}. Asigna una subcategoría a esos gastos o ítems para que aparezcan en la cotización.</p>`:''}
@@ -789,11 +820,11 @@ function render(){
   const sugerencias=[...new Set([...CATS,...S.cronograma.map(a=>a.actividad),...S.gastos.map(g=>g.categoria),...S.proveedores.map(p=>p.categoria)].filter(Boolean).map(x=>String(x).trim()).filter(Boolean))];
   $('#cats').innerHTML=sugerencias.map(c=>`<option value="${esc(c)}">`).join('');
   $('#nav').innerHTML=TABS.map(([id,l])=>`<button data-act="tab" data-id="${id}" aria-current="${id===tab?'page':'false'}">${l}${id==='comentarios'&&S.comentarios.length?` (${S.comentarios.length})`:''}</button>`).join('');
-  $('#evNombre').textContent=S.evento.nombre||'Evento sin nombre';
+  $('#evNombre').textContent=S.evento.nombre||'Nuevo evento';
   const meta=[fmtFecha(S.evento.fecha),S.evento.lugar,S.evento.invitados?`${S.evento.invitados} invitados`:''].filter(Boolean).join(' · ');
-  $('#evMeta').textContent=meta||'Completa los datos del evento en Ajustes';
+  $('#evMeta').textContent=meta||'Completa los datos del cliente y del evento con el botón de arriba';
   const V={resumen:vResumen,cronograma:vCron,gastos:vGastos,proveedores:vProv,presupuesto:vPresupuestoDetallado,cotizacion:vCotizacion,comentarios:vCom,ajustes:vAjustes}[tab];
-  $('#main').innerHTML=V()+(msg?`<p class="msg" role="status" style="margin-top:12px">${esc(msg)}</p>`:'');
+  $('#main').innerHTML=(datosAbierto?vDatos():'')+V()+(msg?`<p class="msg" role="status" style="margin-top:12px">${esc(msg)}</p>`:'');
 }
 
 document.addEventListener('click',e=>{
@@ -871,6 +902,7 @@ document.addEventListener('click',e=>{
     try{window.print();}catch(err){msg='La impresión no está disponible aquí.';}
     return;
   }
+  else if(a==='datosToggle'){datosAbierto=!datosAbierto;}
   else if(a==='elegirArchivo'){
     document.getElementById('archivo').click(); return;
   }
@@ -977,6 +1009,11 @@ document.addEventListener('submit',e=>{
       if(pSel){const r=cargarQuote(pSel,id,null); aviso=r.msg; abierto=id;}
       else abierto=nueva.tercerizado?id:abierto;
     }
+  }
+  else if(k==='datos'){
+    S.cliente={nombre:(d.cliente||'').trim(),empresa:(d.empresa||'').trim(),ruc:(d.ruc||'').trim(),contacto:(d.contacto||'').trim(),telefono:(d.telefono||'').trim(),correo:(d.correo||'').trim()};
+    S.evento=Object.assign({},S.evento,{nombre:(d.nombreEvento||'').trim()||S.evento.nombre,fecha:d.fecha||'',lugar:(d.lugar||'').trim(),invitados:Number(d.invitados)||0});
+    datosAbierto=false; msg='Datos guardados.';
   }
   else if(k==='editar'){
     const a=actOf(d.id); if(!a) return;
