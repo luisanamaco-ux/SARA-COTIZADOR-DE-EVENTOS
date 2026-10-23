@@ -85,6 +85,11 @@ ul.msg{padding-left:18px;margin:0}
     <p class="eyebrow">Control de evento</p>
     <h1 id="evNombre"></h1>
     <p class="meta" id="evMeta"></p>
+    <div class="row no-print" style="margin-top:10px">
+      <button data-act="descargarRespaldo">Descargar respaldo</button>
+      <button class="primary" data-act="elegirArchivo">Cargar datos</button>
+      <input type="file" id="archivo" accept=".json,application/json" hidden>
+    </div>
   </div>
 </header>
 
@@ -773,10 +778,9 @@ function vAjustes(){
     <h2 style="margin-top:0">Respaldo</h2>
     <p class="msg">Los datos viven en este navegador. Copia el respaldo y guárdalo para no perder información, o pega uno para restaurarlo.</p>
     <textarea id="exp" readonly style="min-height:120px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;margin-top:8px">${esc(JSON.stringify(S,null,2))}</textarea>
-    <div class="row" style="margin-top:8px"><button data-act="copiar">Copiar respaldo</button></div>
+    <div class="row" style="margin-top:8px"><button data-act="copiar">Copiar respaldo</button><button class="primary" data-act="descargarRespaldo">Descargar respaldo (.json)</button></div>
     <label style="display:block;margin-top:14px;font-size:12px;color:var(--muted)">Restaurar desde un respaldo
-      <textarea id="imp" placeholder="Pega aquí el respaldo"></textarea></label>
-    <div class="row" style="margin-top:8px"><button data-act="importar">Reemplazar datos con este respaldo</button><button class="danger" data-act="reset">${armed?'Pulsa de nuevo para borrar todo':'Borrar todo'}</button></div>
+      <textarea id="imp" placeholder="Pega aquí el respaldo"></textarea></label>    <div class="row" style="margin-top:8px"><button data-act="importar">Reemplazar datos con este respaldo</button><button class="danger" data-act="reset">${armed?'Pulsa de nuevo para borrar todo':'Borrar todo'}</button></div>
   </div>`;
 }
 
@@ -867,12 +871,23 @@ document.addEventListener('click',e=>{
     try{window.print();}catch(err){msg='La impresión no está disponible aquí.';}
     return;
   }
+  else if(a==='elegirArchivo'){
+    document.getElementById('archivo').click(); return;
+  }
+  else if(a==='descargarRespaldo'){
+    const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob), link=document.createElement('a');
+    link.href=url; link.download='respaldo-aniversario-rae-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    msg='Respaldo descargado. Guárdalo en un lugar seguro.'; render(); return;
+  }
   else if(a==='copiar'){
     navigator.clipboard.writeText($('#exp').value).then(()=>{msg='Respaldo copiado.';render();},()=>{$('#exp').select();msg='Selecciona el texto y cópialo manualmente.';render();});
     return;
   }
   else if(a==='importar'){
-    try{const o=JSON.parse($('#imp').value); if(!o||!o.evento) throw new Error('sin evento'); S=merge(o); msg='Datos restaurados.';}
+    try{const o=JSON.parse($('#imp').value); if(!o||!o.evento) throw new Error('sin evento'); S=merge(o); S.catalogo=structuredClone(DEF.catalogo); msg='Datos restaurados.';}
     catch(err){msg='El texto no es un respaldo válido.';}
   }
   else if(a==='reset'){
@@ -886,6 +901,15 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.pick){picks[t.dataset.i]=t.checked;return;}
+  if(t.id==='archivo'){
+    const f=t.files&&t.files[0]; if(!f) return;
+    f.text().then(txt=>{
+      try{const o=JSON.parse(txt); if(!o||!o.evento) throw new Error('sin evento'); S=merge(o); S.catalogo=structuredClone(DEF.catalogo); msg='Datos restaurados desde el archivo.';}
+      catch(err){msg='El archivo no es un respaldo válido.';}
+      save(); render();
+    });
+    return;
+  }
   if(t.dataset.pc){
     const p=S.proveedores.find(x=>x.id===t.dataset.pc), it=p&&(p.items||[]).find(x=>x.id===t.dataset.i);
     if(!it) return;
