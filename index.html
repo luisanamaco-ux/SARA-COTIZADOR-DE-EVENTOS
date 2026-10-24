@@ -87,11 +87,10 @@ ul.msg{padding-left:18px;margin:0}
 <header class="top">
   <div class="wrap">
     <p class="eyebrow">Cotizador de Eventos</p>
-    <h1 id="evNombre" hidden></h1>
     <p class="meta" id="evMeta"></p>
     <div class="row no-print" style="margin-top:10px">
       <button data-act="descargarRespaldo">Descargar respaldo</button>
-      <button data-act="datosToggle">Datos del cliente y evento</button>
+      <button class="danger" data-act="borrarTodo">Iniciar cotización desde cero</button>
       <button class="primary" data-act="elegirArchivo">Cargar datos</button>
       <input type="file" id="archivo" accept=".json,application/json" hidden>
     </div>
@@ -103,828 +102,554 @@ ul.msg{padding-left:18px;margin:0}
 <datalist id="cats"></datalist>
 
 <script>
-const DEF={cliente:{nombre:'',empresa:'',ruc:'',contacto:'',telefono:'',correo:''},evento:{nombre:'',fecha:'',lugar:'',invitados:0,presupuesto:0,inicio:'09:00'},cronograma:[],gastos:[],proveedores:[],comentarios:[],partidas:[{id:'local-generales',nombre:'Local y costos generales'}],catalogo:[
+const KEY='evento-rae-v2', KEY_OLD='evento-rae-v1';
+/* Estructura de la cotización al cliente: capítulos 01 a 09. */
+const COTIZ_CAPS=[
+  {cat:'01 Local y acondicionamiento',subs:['1.1 Alquiler de local','1.2 Limpieza previa y posterior','1.3 Energía eléctrica y servicios','1.4 Toldos, carpas o estructuras']},
+  {cat:'02 Infraestructura y mobiliario',subs:['2.1 Mesas y sillas','2.2 Mesas de registro y recepción','2.3 Escenario o estrado','2.4 Podio o atril','2.5 Salas VIP o ambientes adicionales']},
+  {cat:'03 Equipamiento audiovisual',subs:['3.1 Sistema de sonido y parlantes','3.2 Micrófonos inalámbricos','3.3 Pantalla LED o proyector','3.4 Iluminación escénica','3.5 Operador técnico']},
+  {cat:'04 Montaje y decoración',subs:['4.1 Diseño y ambientación','4.2 Backing corporativo con logotipo','4.3 Arreglos florales y decoración','4.4 Señalética y paneles informativos','4.5 Instalación y desmontaje']},
+  {cat:'05 Alimentación y bebidas',subs:['5.1 Coffee break','5.2 Almuerzo o cena','5.3 Bebidas y agua','5.4 Personal de atención','5.5 Vajilla y menaje','5.6 Bocaditos','5.7 Almuerzo','5.8 Cena','5.9 Bebidas','5.10 Personal de atención','5.11 Menaje','5.12 Panadería','5.13 Dulces y Postres','5.14 Salados','5.15 Torta']},
+  {cat:'06 Personal y protocolo',subs:['6.1 Anfitriones y recepción','6.2 Maestro de ceremonias','6.3 Coordinador general','6.4 Personal de seguridad','6.5 Personal de limpieza durante el evento','6.6 Mozo']},
+  {cat:'07 Comunicación y materiales',subs:['7.1 Invitaciones digitales o impresas','7.2 Credenciales y fotochecks','7.3 Material corporativo y merchandising','7.4 Fotografía y video','7.5 Diseño gráfico y piezas digitales']},
+  {cat:'08 Logística y transporte',subs:['8.1 Transporte de equipos y mobiliario','8.2 Flete de materiales','8.3 Estacionamiento','8.4 Hospedaje y movilidad de invitados']},
+  {cat:'09 Seguridad y contingencias',subs:['9.1 Botiquín y atención de primeros auxilios','9.2 Extintores y señalización de seguridad','9.3 Plan de contingencia por clima','9.4 Fondo para imprevistos']},
+  {cat:'10 Performance',subs:['10.1 Stand Up Comedy','10.2 Orquesta Digital','10.3 Orquesta Musical','10.4 Danzas Típicas','10.5 Animación Cumpleaños','10.6 DJ','10.7 Maestro de Ceremonia','10.8 Gincana Corporativa']}
+];
+const UNID={'1.1':'Por evento','1.2':'Servicio','1.3':'Servicio','1.4':'m² / unidad','2.1':'Unidad','2.2':'Unidad','2.3':'m²','2.4':'Unidad','2.5':'Unidad','3.1':'Servicio','3.2':'Unidad','3.3':'m² / unidad','3.4':'Servicio','3.5':'Jornada','4.1':'Servicio','4.2':'m²','4.3':'Servicio','4.4':'Unidad','4.5':'Servicio','5.1':'Persona','5.2':'Persona','5.3':'Persona','5.4':'Persona / jornada','5.5':'Persona','6.1':'Persona / jornada','6.2':'Servicio','6.3':'Jornada','6.4':'Persona / jornada','6.5':'Jornada','7.1':'Unidad','7.2':'Unidad','7.3':'Unidad','7.4':'Servicio','7.5':'Servicio','8.1':'Servicio','8.2':'Servicio','8.3':'Unidad / servicio','8.4':'Servicio','9.1':'Servicio','9.2':'Servicio','9.3':'Servicio','9.4':'% del presupuesto','5.6':'Persona','5.7':'Persona','5.8':'Persona','5.9':'Persona','5.10':'Persona / jornada','5.11':'Persona','5.12':'Persona','5.13':'Persona','5.14':'Persona','10.1':'Servicio','10.2':'Servicio','10.3':'Servicio','10.4':'Servicio','10.5':'Servicio','10.6':'Servicio','10.7':'Servicio','10.8':'Servicio'};
+/* Categorías de versiones anteriores: ya no existen en la cotización. Los productos que las usaban quedan sin partida. */
+const LEGADO=[
   {cat:'CATERING',subs:['Bocaditos','Platos de fondo','Platos de cena','Bebidas','Torta']},
   {cat:'DECORACIÓN E INFRAESTRUCTURA',subs:['Alquiler de equipo de sonido','Alquiler de equipo para grupo','Alquiler de luces','Tarima','Banner','Decoración general','Menaje']},
   {cat:'SHOW',subs:['Grupo musical','Grupo digital','Animación','Grupo de Danza','StandUp Comedy','MULTIMEDIA']},
   {cat:'GASTOS GENERALES',subs:['Local','Mozos','Organizador','Anfitrión','Personal de apoyo','Seguridad']}
-]};
-const KEY='evento-rae-v1';
-const TABS=[['resumen','Resumen'],['cronograma','Cronograma'],['gastos','Gastos'],['proveedores','Proveedores'],['presupuesto','Presupuesto final'],['cotizacion','Cotización cliente'],['comentarios','Comentarios'],['ajustes','Ajustes']];
-const CATS=['Local','Catering','Música y sonido','Decoración','Audio y video','Personal','Transporte','Invitaciones','Premios y obsequios','Imprevistos'];
-const ESTADOS=['Pendiente','En curso','Listo'];
-let tab='resumen', armed=false, msg='', abierto=null, cargaProv=null, editando=null, picks={}, datosAbierto=false;
+];
+const CATS=['Catering','Decoración','Música y sonido','Audio y video','Personal','Transporte','Invitaciones','Local'];
+const TABS=[['proveedores','Proveedores'],['cliente','Cliente'],['cronograma','Cronograma'],['cotizacion','Cotización cliente'],['utilidades','Utilidades']];
+const DEF={cliente:{nombre:'',empresa:'',ruc:'',contacto:'',telefono:'',correo:''},evento:{nombre:'',fecha:'',lugar:'',invitados:0,inicio:'09:00'},cotiz:{admin:0,contingencia:5,igv:false},proveedores:[],cron:[],extra:[],off:{},seq:1};
+let S, tab='proveedores', msg='', armed=false, picks={}, editCron=null, fotoAbierta=null, fotoNueva={}, confirmarBorrar=null;
+/* Foto de producto: se reduce para que quepa en el navegador (máx. 600 px, JPEG). */
+function comprimir(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,600/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',0.75));};im.onerror=rej;im.src=r.result;};r.onerror=rej;r.readAsDataURL(file);});}
 
-function merge(o){const d=structuredClone(DEF);return Object.assign(d,o,{evento:Object.assign(d.evento,(o&&o.evento)||{})});}
-function load(){try{
-  const r=localStorage.getItem(KEY); const o=r?JSON.parse(r):{};
-  if(!(o.evento&&o.evento.inicio)&&Array.isArray(o.cronograma)&&o.cronograma.length){
-    const ord=[...o.cronograma].sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
-    o.evento=Object.assign({},o.evento,{inicio:ord[0].hora||'09:00'}); o.cronograma=ord;
-  }
-  const s=merge(o);
-  /* El catálogo de categorías viene siempre del código, para que las novedades aparezcan aunque haya datos guardados. */
-  s.catalogo=structuredClone(DEF.catalogo);
+function merge(o){const d=structuredClone(DEF);return Object.assign(d,o,{cliente:Object.assign(d.cliente,(o&&o.cliente)||{}),evento:Object.assign(d.evento,(o&&o.evento)||{}),cotiz:Object.assign(d.cotiz,(o&&o.cotiz)||{})});}
+/* Normaliza datos: código único por proveedor, utilidad por ítem y partidas manuales. */
+function normalizar(o){
+  const provs=(o.proveedores||[]).map((p,k)=>({...p,codigo:p.codigo||('PRV-'+String(k+1).padStart(3,'0')),items:(p.items||[]).map((i,idx)=>{const leg=LEGADO.some(c=>String(i.sub||'').startsWith(c.cat+'|'));const sub=leg?'':(i.sub||'');const cargas=sub?(Array.isArray(i.cargas)?i.cargas.filter(l=>l&&l.id).map(l=>({id:l.id,cant:(l.cant==null||l.cant==='')?null:Number(l.cant)})):Array.from({length:(i.copias!==undefined?Math.max(0,Number(i.copias)||0):(i.cargado===false?0:1))},()=>({id:uid(),cant:null}))):[];return {...i,utilidad:Number(i.utilidad)||0,sel:undefined,sub,cargas,copias:cargas.length,cargado:cargas.length>0,codigo:i.codigo||(p.codigo+'-'+String(idx+1).padStart(2,'0'))};})}));
+  const s=merge({...o,proveedores:provs,cron:Array.isArray(o.cron)?o.cron:[],extra:Array.isArray(o.extra)?o.extra:[],off:o.off||{}});
+  s.seq=Math.max(Number(o.seq)||1,provs.length+1);
   return s;
-}catch(e){const s=merge({});s.catalogo=structuredClone(DEF.catalogo);return s;}}
+}
+function load(){try{
+  const r=localStorage.getItem(KEY)||localStorage.getItem(KEY_OLD);
+  return normalizar(r?JSON.parse(r):{});
+}catch(e){return normalizar({});}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){msg='No se pudo guardar en este navegador.';}}
-let S=load();
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Math.random().toString(36).slice(2,9);
 const money=n=>'S/ '+(Number(n)||0).toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const num=n=>(Number(n)||0).toLocaleString('es-PE',{maximumFractionDigits:2});
-const eff=x=>Number(x.real)>0?Number(x.real):(Number(x.estimado)||0);
-const sum=a=>a.reduce((s,x)=>s+eff(x),0);
 const pad=n=>String(n).padStart(2,'0');
-function finHora(h,d){if(!h)return'—';const [a,b]=h.split(':').map(Number);const t=a*60+b+(Number(d)||0);return pad(Math.floor(t/60)%24)+':'+pad(t%60);}
 function fmtFecha(f){if(!f)return'';return new Date(f+'T00:00').toLocaleDateString('es-PE',{weekday:'long',day:'numeric',month:'long',year:'numeric'});}
-function dias(){if(!S.evento.fecha)return null;const hoy=new Date();hoy.setHours(0,0,0,0);return Math.ceil((new Date(S.evento.fecha+'T00:00')-hoy)/86400000);}
-
-/* Ítems: cantidad × precio unitario. Un proveedor tiene un catálogo de ítems; cada cotización cargada en una actividad conserva los ítems marcados. */
-/* Un ítem "por confirmar" no suma al total hasta que se le ponga precio. */
-const itemSub=i=>i.porConfirmar?0:(Number(i.cantidad)||0)*(Number(i.precio)||0);
-/* Cantidad de ítems de una actividad que están por confirmar precio (no suman). */
-const pendCount=a=>(a.cotizaciones||[]).reduce((n,q)=>n+(q.items||[]).filter(i=>i.porConfirmar).length,0);
-const totalProv=p=>(p.items||[]).reduce((s,i)=>s+itemSub(i),0);
-const montoQ=q=>(q.items||[]).filter(i=>i.sel).reduce((s,i)=>s+itemSub(i),0);
-
-/* Centros de costo */
-const actOf=id=>S.cronograma.find(x=>x.id===id);
-const gastosDe=id=>S.gastos.filter(g=>g.actividadId===id);
-const generales=()=>S.gastos.filter(g=>!actOf(g.actividadId)&&!S.partidas.some(p=>p.id===g.actividadId));
-/* Todo lo cargado desde Proveedores (ítems marcados) suma al costo del centro. */
-const servicio=a=>(a.cotizaciones||[]).reduce((s,q)=>s+montoQ(q),0);
-const costoAct=a=>sum(gastosDe(a.id))+servicio(a);
-const totalComp=()=>sum(S.gastos)+S.cronograma.reduce((s,a)=>s+servicio(a),0);
 const toMin=h=>{const [a,b]=(h||'00:00').split(':').map(Number);return a*60+b;};
 const fromMin=m=>{const x=((m%1440)+1440)%1440;return pad(Math.floor(x/60))+':'+pad(x%60);};
-/* Horario en cadena: cada actividad empieza cuando termina la anterior. */
-function sincronizarHoras(){let t=toMin(S.evento.inicio||'09:00');S.cronograma.forEach(a=>{a.hora=fromMin(t);t+=Number(a.duracion)||0;});}
-const ordenCron=()=>S.cronograma;
-/* Subcategoría guardada como "CATEGORÍA|Subcategoría". */
+
+/* Ítems: cantidad × precio unitario. Por confirmar no suma hasta tener precio. */
+const itemSub=i=>i.porConfirmar?0:(Number(i.cantidad)||0)*(Number(i.precio)||0);
+const totalProv=p=>(p.items||[]).reduce((s,i)=>s+itemSub(i),0);
+const codigoNuevo=()=>{const c='PRV-'+String(S.seq).padStart(3,'0');S.seq++;return c;};
 const catDe=s=>s?String(s).split('|')[0]:'Sin categoría';
+
+/* Partidas de la cotización: capítulos 01–09 + partidas manuales + categorías anteriores. */
+function catalogo(){
+  return [
+    ...COTIZ_CAPS.map(c=>({cat:c.cat,subs:[...c.subs,...S.extra.filter(e=>e.cap===c.cat).map(e=>e.nombre)]}))
+  ];
+}
+const unidDe=s=>{const code=String(s).split(' ')[0];return UNID[code]||(S.extra.find(e=>e.nombre===s)||{}).unid||'';};
 function subOpts(sel){
-  return '<option value="">Sin clasificar</option>'+S.catalogo.map(c=>`<optgroup label="${esc(c.cat)}">${c.subs.map(s=>{const v=c.cat+'|'+s;return `<option value="${esc(v)}" ${v===sel?'selected':''}>${esc(s)}</option>`;}).join('')}</optgroup>`).join('');
+  return '<option value="">Sin partida</option>'+catalogo().map(c=>`<optgroup label="${esc(c.cat)}">${c.subs.map(s=>{const v=c.cat+'|'+s;return `<option value="${esc(v)}" ${v===sel?'selected':''}>${esc(s)}</option>`;}).join('')}</optgroup>`).join('');
 }
-function actividadesOpts(sel){
-  const parts=S.partidas.map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>${esc(p.nombre)}</option>`).join('');
-  const acts=ordenCron().map(a=>`<option value="${a.id}" ${a.id===sel?'selected':''}>${esc(a.hora||'')} ${esc(a.actividad)}</option>`).join('');
-  return '<option value="">General (sin partida)</option>'+(parts?`<optgroup label="Partidas generales">${parts}</optgroup>`:'')+`<optgroup label="Actividades">${acts}</optgroup>`;
-}
-function provOpts(excluir=[]){return S.proveedores.filter(p=>!excluir.includes(p.id)).map(p=>`<option value="${p.id}">${esc(p.nombre)} · ${esc(p.categoria)} · ${money(totalProv(p))}</option>`).join('');}
+function provOpts(sel){return '<option value="">—</option>'+S.proveedores.map(p=>`<option value="${p.id}" ${p.id===sel?'selected':''}>${esc(p.codigo)} · ${esc(p.nombre)}</option>`).join('');}
 
-/* Carga un proveedor como cotización de una actividad. selIds: ítems marcados (null = todos). */
-function cargarQuote(p,actId,selIds){
-  const act=actOf(actId); if(!act) return {ok:false,msg:'Actividad no encontrada.'};
-  if(!(p.items||[]).length) return {ok:false,msg:`${p.nombre} no tiene ítems. Agrégalos en Proveedores.`};
-  act.cotizaciones=act.cotizaciones||[];
-  const pick=p.items.filter(i=>!selIds||selIds.includes(i.id)).map(i=>({...i,sel:true}));
-  const q=act.cotizaciones.find(x=>x.id===p.id);
-  if(q){
-    const nuevos=pick.filter(i=>!(q.items||[]).some(x=>x.id===i.id));
-    if(!nuevos.length) return {ok:false,msg:`Esos ítems ya están en "${act.actividad}".`};
-    q.items=[...(q.items||[]),...nuevos]; act.tercerizado=true;
-    return {ok:true,msg:`${nuevos.length} ítem(s) de ${p.nombre} agregados a "${act.actividad}".`};
-  }
-  act.tercerizado=true;
-  act.cotizaciones.push({id:p.id,proveedor:p.nombre,contacto:p.contacto||'',calificacion:p.calificacion||3,items:pick});
-  return {ok:true,msg:`${p.nombre} agregado a "${act.actividad}".`};
-}
-
-function vResumen(){
-  const comp=totalComp(), pag=sum(S.gastos.filter(x=>x.pagado));
-  const pres=Number(S.evento.presupuesto)||0, disp=pres-comp, pct=pres?Math.min(100,comp/pres*100):0, over=pres>0&&comp>pres;
-  const inv=Number(S.evento.invitados)||0, d=dias();
-  const pendCron=S.cronograma.filter(x=>x.estado!=='Listo').length, pendPago=S.gastos.filter(x=>!x.pagado).length;
-  const tercSin=S.cronograma.filter(a=>a.tercerizado&&servicio(a)===0).length;
-  const cats={}; S.gastos.forEach(g=>{const k=g.categoria||'Sin categoría';cats[k]=(cats[k]||0)+eff(g);});
-  const max=Math.max(0,...Object.values(cats));
-  const catRows=Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="catbar"><span>${esc(k)}</span><div class="bar"><i style="width:${max?v/max*100:0}%"></i></div><span class="num">${money(v)}</span></div>`).join('');
-  return `
-  <div class="grid4">
-    <div class="card kpi"><span>Presupuesto</span><b>${money(pres)}</b></div>
-    <div class="card kpi"><span>Comprometido (${pct.toFixed(0)}%)</span><b>${money(comp)}</b></div>
-    <div class="card kpi"><span>Pagado (gastos)</span><b>${money(pag)}</b></div>
-    <div class="card kpi"><span>Disponible</span><b style="color:${disp<0?'var(--bad)':'inherit'}">${money(disp)}</b></div>
-    <div class="card kpi"><span>Días para el evento</span><b>${d===null?'—':d}</b></div>
-    <div class="card kpi"><span>Costo por invitado</span><b>${inv?money(comp/inv):'—'}</b></div>
-  </div>
-  <div class="card" style="margin-top:12px">
-    <div class="bar ${over?'over':''}"><i style="width:${pct}%"></i></div>
-    <p class="msg" style="margin-top:8px">${over?'El compromiso supera el presupuesto.':pres?'Uso del presupuesto.':'Define el presupuesto en Ajustes para ver el avance.'}</p>
-  </div>
-  <div class="cols" style="margin-top:16px">
-    <div class="card"><h2 style="margin-top:0">Pendientes</h2>
-      <ul class="msg">
-        <li>${pendCron} actividades sin completar</li>
-        <li>${pendPago} gastos sin pagar</li>
-        <li>${tercSin} actividades tercerizadas sin servicios cargados</li>
-      </ul>
-    </div>
-    <div class="card"><h2 style="margin-top:0">Gasto por categoría</h2>${catRows||'<p class="empty">Aún no hay gastos. Regístralos en la pestaña Gastos.</p>'}</div>
-  </div>
-  <div class="card" style="margin-top:16px"><h2 style="margin-top:0">Centros de costo (por actividad)</h2>${vCentros()}</div>`;
-}
-
-function vCentros(){
-  if(!S.cronograma.length&&!S.gastos.length) return '<p class="empty">Crea actividades en Cronograma; cada una tendrá su centro de costo.</p>';
-  const items=ordenCron().map(a=>[`${a.hora||'—'} · ${a.actividad}${a.tercerizado?' (tercerizado)':''}`,costoAct(a)]);
-  S.partidas.forEach(p=>items.push([p.nombre+' (partida)',sum(S.gastos.filter(g=>g.actividadId===p.id))]));
-  items.push(['General (sin actividad)',sum(generales())]);
-  const max=Math.max(0,...items.map(i=>i[1]));
-  return items.map(([k,v])=>`<div class="catbar"><span>${esc(k)}</span><div class="bar"><i style="width:${max?v/max*100:0}%"></i></div><span class="num">${money(v)}</span></div>`).join('');
-}
-
-function vCron(){
-  const lista=ordenCron().map(a=>cardAct(a)).join('');
-  return `<form class="card row" data-form="cronograma">
-    <label style="flex-basis:160px">Hora de inicio (opcional)<input type="time" name="horaInicio"></label>
-    <label style="flex-basis:220px">Insertar después de<select name="despuesDe"><option value="">Al final del programa</option><option value="__inicio__">Al inicio del programa (antes de la primera)</option>${S.cronograma.map(a=>`<option value="${a.id}">${esc(a.hora||'')} ${esc(a.actividad)}</option>`).join('')}</select></label>
-    <label>Duración (min)<input type="number" name="duracion" min="5" step="5" value="30"></label>
-    <label style="flex-basis:220px">Actividad<input name="actividad" required placeholder="Ej. Bienvenida y brindis"></label>
-    <label>Responsable<input name="responsable" placeholder="Nombre"></label>
-    <label>Estado<select name="estado">${ESTADOS.map(e=>`<option>${e}</option>`).join('')}</select></label>
-    <label class="inline"><input type="checkbox" name="tercerizado"> Tercerizado</label>
-    <label style="flex-basis:300px">Cargar proveedor del directorio (opcional)<select name="proveedorId"><option value="">Ninguno</option>${provOpts()}</select></label>
-    <label style="flex-basis:100%">Notas<input name="notas" placeholder="Opcional"></label>
-    <button class="primary" type="submit">Agregar al programa</button>
-  </form>
-  <h2 class="sec">Programa del evento</h2>
-  ${lista||'<p class="empty">Sin actividades. Agrega la primera con el formulario de arriba; el programa se ordena solo por hora.</p>'}`;
-}
-
-function editCard(a){
-  const i=S.cronograma.indexOf(a);
-  return `<div class="card" style="margin-top:12px">
-    <h3>Editar actividad</h3>
-    <form class="row" data-form="editar" style="margin-top:10px">
-      <input type="hidden" name="id" value="${a.id}">
-      <label>Hora de inicio<input type="time" name="hora" value="${esc(a.hora)}"></label>
-      <label>Duración (min)<input type="number" name="duracion" min="5" step="5" value="${Number(a.duracion)||0}" required></label>
-      <label style="flex-basis:220px">Actividad<input name="actividad" required value="${esc(a.actividad)}"></label>
-      <label>Responsable<input name="responsable" value="${esc(a.responsable)}"></label>
-      <label>Estado<select name="estado">${ESTADOS.map(e=>`<option ${e===a.estado?'selected':''}>${e}</option>`).join('')}</select></label>
-      <label class="inline"><input type="checkbox" name="tercerizado" ${a.tercerizado?'checked':''}> Tercerizado</label>
-      <label style="flex-basis:100%">Notas<input name="notas" value="${esc(a.notas)}"></label>
-      <p class="msg" style="flex-basis:100%">${i===0?'Cambiar la hora de la primera actividad cambia la hora de inicio del programa.':'Cambiar la hora de inicio ajusta la duración de la actividad anterior, para que no queden huecos ni cruces.'}</p>
-      <button class="primary" type="submit">Guardar cambios</button>
-      <button type="button" data-act="cancelar">Cancelar</button>
-    </form>
-  </div>`;
-}
-
-function cardAct(a){
-  const open=abierto===a.id;
-  if(editando===a.id) return editCard(a);
-  const idx=S.cronograma.indexOf(a), n=S.cronograma.length;
-  return `<div class="card" style="margin-top:12px">
-    <div class="row" style="align-items:center;justify-content:space-between">
-      <div>
-        <span class="num"><b>${esc(a.hora)||'—'} – ${finHora(a.hora,a.duracion)}</b></span> · <input value="${esc(a.actividad)}" data-upd="cronograma" data-id="${a.id}" data-field="actividad" aria-label="Nombre de la actividad" style="font-weight:700;min-width:240px;max-width:100%"> ${a.tercerizado?'<span class="badge">Tercerizado</span>':''}
-        <div class="msg"><span class="inl">Duración <input type="number" min="5" step="5" value="${Number(a.duracion)||0}" data-upd="cronograma" data-id="${a.id}" data-field="duracion" aria-label="Duración en minutos" style="width:84px"> min</span> · ${esc(a.responsable)||'Sin responsable'}${a.notas?' · '+esc(a.notas):''}${pendCount(a)?` · <b style="color:#b45309">${pendCount(a)} por confirmar (no suman)</b>`:''}</div>
-      </div>
-      <div class="row" style="align-items:center">
-        <span class="num"><b>${money(costoAct(a))}</b></span>
-        <select data-upd="cronograma" data-id="${a.id}" data-field="estado" aria-label="Estado">${ESTADOS.map(e=>`<option ${e===a.estado?'selected':''}>${e}</option>`).join('')}</select>
-        <button data-act="mover" data-id="${a.id}" data-dir="-1" ${idx===0?'disabled':''} aria-label="Subir">↑</button>
-        <button data-act="mover" data-id="${a.id}" data-dir="1" ${idx===n-1?'disabled':''} aria-label="Bajar">↓</button>
-        <button data-act="editar" data-id="${a.id}">Editar</button>
-        <button data-act="abrir" data-id="${a.id}" aria-expanded="${open}">${open?'Cerrar centro':'Centro de costo'}</button>
-        <button class="danger" data-act="del" data-list="cronograma" data-id="${a.id}">Quitar</button>
-      </div>
-    </div>
-    ${open?centro(a):''}
-  </div>`;
-}
-
-function centro(a){
-  const gs=gastosDe(a.id);
-  const dir=sum(gs), pag=sum(gs.filter(g=>g.pagado)), srv=servicio(a);
-  const filas=gs.map(g=>{
-    const dif=Number(g.real)>0?(Number(g.estimado)||0)-Number(g.real):null;
-    return `<tr>
-      <td>${esc(g.concepto)}</td>
-      <td>${esc(g.categoria)||'—'}</td>
-      <td>${esc(g.proveedor)||'—'}</td>
-      <td class="num">${money(g.estimado)}</td>
-      <td class="num"><input type="number" step="0.01" min="0" value="${Number(g.real)||''}" data-upd="gastos" data-id="${g.id}" data-field="real" aria-label="Monto real" style="width:110px;text-align:right"></td>
-      <td><label><input type="checkbox" data-act="pagado" data-id="${g.id}" ${g.pagado?'checked':''}> ${g.pagado?'Pagado':'Pendiente'}</label></td>
-      <td><button class="danger" data-act="del" data-list="gastos" data-id="${g.id}">Quitar</button></td>
-    </tr>`;}).join('');
-  return `<div class="panel">
-    <div class="grid4">
-      <div class="card kpi"><span>Gastos directos</span><b>${money(dir)}</b></div>
-      <div class="card kpi"><span>Servicio contratado</span><b>${money(srv)}</b></div>
-      <div class="card kpi"><span>Total del centro</span><b>${money(dir+srv)}</b></div>
-      <div class="card kpi"><span>Pagado</span><b>${money(pag)}</b></div>
-    </div>
-
-    <h3 class="sec">Gastos de esta actividad</h3>
-    <form class="row" data-form="gasto-acto">
-      <input type="hidden" name="actividadId" value="${a.id}">
-      <label style="flex-basis:200px">Concepto<input name="concepto" required placeholder="Ej. Alquiler de mesas"></label>
-      <label>Subcategoría (cotización)<select name="sub">${subOpts('')}</select></label>
-      <label>Proveedor<input name="proveedor" placeholder="Opcional"></label>
-      <label>Estimado (S/)<input type="number" name="estimado" min="0" step="0.01" required></label>
-      <label>Real (S/)<input type="number" name="real" min="0" step="0.01" placeholder="Si ya se sabe"></label>
-      <button class="primary" type="submit">Agregar gasto</button>
-    </form>
-    ${gs.length?`<div class="tablewrap"><table>
-      <thead><tr><th>Concepto</th><th>Categoría</th><th>Proveedor</th><th class="num">Estimado</th><th class="num">Real</th><th>Pago</th><th></th></tr></thead>
-      <tbody>${filas}</tbody></table></div>`
-    :'<p class="msg" style="margin-top:8px">Sin gastos directos en este centro.</p>'}
-
-    ${a.tercerizado?comparativa(a):'<p class="msg" style="margin-top:14px">Esta actividad no es tercerizada. Carga un proveedor desde Cronograma o Proveedores para compararlos.</p>'}
-  </div>`;
-}
-
-function comparativa(a){
-  const qs=a.cotizaciones||[], n=qs.length;
-  const minM=n?Math.min(...qs.map(montoQ)):null;
-  const agregar=`<div class="row" style="margin-top:10px">
-      <label style="flex-basis:300px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px">Agregar proveedor del directorio
-        <select id="addq-${a.id}"><option value="">Elegir proveedor…</option>${provOpts(qs.map(q=>q.id))}</select></label>
-      <button class="primary" data-act="addq" data-id="${a.id}">Agregar (${n+1} de 3)</button>
-    </div>`;
-  const bloques=qs.map(q=>{
-    const m=montoQ(q), low=false;
-    return `<div class="sub">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <div><b>${esc(q.proveedor)}</b> ${q.contacto?`<span class="msg">· ${esc(q.contacto)}</span>`:''}</div>
-        <div class="row" style="align-items:center">
-          <span class="num ${low?'best':''}"><b>${money(m)}</b></span>${low?'<span class="msg">más bajo</span>':''}
-          <button class="danger" data-act="delq" data-id="${a.id}" data-q="${q.id}">Quitar</button>
-        </div>
-      </div>
-      <div class="tablewrap"><table>
-        <thead><tr><th>Incluir</th><th>Descripción</th><th>Unidad</th><th>Subcategoría</th><th class="num">Cantidad</th><th class="num">P. unitario</th><th class="num">Subtotal</th></tr></thead>
-        <tbody>${(q.items||[]).slice().sort((x,y)=>(y.porConfirmar?1:0)-(x.porConfirmar?1:0)).map(i=>`<tr${i.porConfirmar?' style="background:#fef3c7"':''}>
-          <td><input type="checkbox" data-act="itemsel" data-id="${a.id}" data-q="${q.id}" data-i="${i.id}" ${i.sel?'checked':''} aria-label="Incluir ${esc(i.descripcion)}"></td>
-          <td><input value="${esc(i.descripcion)}" data-qdesc="${a.id}" data-q="${q.id}" data-i="${i.id}" aria-label="Descripción del ítem" style="width:100%;min-width:180px"></td><td>${esc(i.unidad)||'—'}</td>
-          <td><select data-qsub="${a.id}" data-q="${q.id}" data-i="${i.id}" aria-label="Subcategoría de ${esc(i.descripcion)}">${subOpts(i.sub||'')}</select></td>
-          <td class="num">${num(i.cantidad)}</td><td class="num">${money(i.precio)}</td>
-          <td class="num">${i.porConfirmar?'<b style="color:#b45309">Por confirmar</b>':(i.sel?money(itemSub(i)):'—')}</td>
-        </tr>`).join('')}</tbody></table></div>
-    </div>`;}).join('');
-  const txt=srvTxt(a);
-  return `<div style="margin-top:16px"><h3>Proveedores cargados</h3>
-    <p class="msg">Lo que cargaste desde Proveedores aparece aquí. Todos los ítems marcados suman al costo del centro y al presupuesto general.</p>
-    ${bloques||'<p class="empty" style="margin-top:10px">Carga ítems desde la pestaña Proveedores para verlos aquí.</p>'}
-    ${agregar}
-    <p class="msg" style="margin-top:8px">${txt}</p></div>`;
-}
-function srvTxt(a){const t=servicio(a); return t?`Servicios cargados: ${money(t)} (suma de los ítems marcados).`:'Aún no hay servicios cargados.';}
-
-function vGastos(){
-  const est=S.gastos.reduce((s,x)=>s+(Number(x.estimado)||0),0), real=S.gastos.reduce((s,x)=>s+(Number(x.real)||0),0), comp=totalComp();
-  const rows=S.gastos.map(g=>{
-    const dif=Number(g.real)>0?(Number(g.estimado)||0)-Number(g.real):null;
-    return `<tr>
-      <td>${esc(g.concepto)}</td>
-      <td>${esc(g.categoria)||'—'}</td>
-      <td>${esc(g.proveedor)||'—'}</td>
-      <td><select data-upd="gastos" data-id="${g.id}" data-field="actividadId" aria-label="Centro de costo">${actividadesOpts(g.actividadId||'')}</select></td>
-      <td class="num">${money(g.estimado)}</td>
-      <td class="num"><input type="number" step="0.01" min="0" value="${Number(g.real)||''}" data-upd="gastos" data-id="${g.id}" data-field="real" aria-label="Monto real" style="width:110px;text-align:right"></td>
-      <td class="num" style="color:${dif===null?'inherit':dif<0?'var(--bad)':'var(--ok)'}">${dif===null?'—':money(dif)}</td>
-      <td><label><input type="checkbox" data-act="pagado" data-id="${g.id}" ${g.pagado?'checked':''}> ${g.pagado?'Pagado':'Pendiente'}</label></td>
-      <td><button class="danger" data-act="del" data-list="gastos" data-id="${g.id}">Quitar</button></td>
-    </tr>`;}).join('');
-  return `<div class="card" style="margin-bottom:12px">
-    <h3>Partidas generales</h3>
-    <p class="msg">Centros de costo que no están ligados a una actividad, como Local o costos generales.</p>
-    <ul class="msg" style="padding-left:18px">${S.partidas.map(p=>`<li>${esc(p.nombre)} · ${money(sum(S.gastos.filter(g=>g.actividadId===p.id)))} <button class="danger" data-act="del" data-list="partidas" data-id="${p.id}">Quitar</button></li>`).join('')||'<li>Sin partidas</li>'}</ul>
-    <form class="row" data-form="partida" style="margin-top:8px"><label style="flex-basis:300px">Nueva partida<input name="nombre" required placeholder="Ej. Movilidad y transporte"></label><button type="submit">Agregar partida</button></form>
-  </div>
-  <form class="card row" data-form="gastos">
-    <label style="flex-basis:200px">Concepto<input name="concepto" required placeholder="Ej. Alquiler de salón"></label>
-    <label>Subcategoría (cotización)<select name="sub">${subOpts('')}</select></label>
-    <label>Proveedor<input name="proveedor" placeholder="Opcional"></label>
-    <label>Centro de costo<select name="actividadId">${actividadesOpts('')}</select></label>
-    <label>Estimado (S/)<input type="number" name="estimado" min="0" step="0.01" required></label>
-    <label>Real (S/)<input type="number" name="real" min="0" step="0.01" placeholder="Si ya se sabe"></label>
-    <button class="primary" type="submit">Agregar gasto</button>
-  </form>
-  <h2 class="sec">Todos los gastos</h2>
-  ${S.gastos.length?`<div class="tablewrap"><table>
-    <thead><tr><th>Concepto</th><th>Categoría</th><th>Proveedor</th><th>Centro de costo</th><th class="num">Estimado</th><th class="num">Real</th><th class="num">Diferencia</th><th>Pago</th><th></th></tr></thead>
-    <tbody>${rows}
-      <tr><td colspan="4"><b>Totales de gastos</b></td><td class="num"><b>${money(est)}</b></td><td class="num"><b>${money(real)}</b></td><td></td><td colspan="2" class="num">Comprometido con servicios: <b>${money(comp)}</b></td></tr>
-    </tbody></table></div>`
-  :'<p class="empty">Sin gastos registrados. Puedes agregarlos aquí o dentro de cada centro de costo en Cronograma.</p>'}`;
-}
-
-function vProv(){
-  const grupos={}; S.proveedores.forEach(p=>{const k=p.categoria||'Sin categoría'; (grupos[k]=grupos[k]||[]).push(p);});
-  const bloques=Object.entries(grupos).map(([cat,ps])=>`<div class="card" style="margin-top:12px">
-    <h2 style="margin:0 0 6px">${esc(cat)}</h2>
-    ${ps.map(p=>provCard(p)).join('')}
-  </div>`).join('');
-  return `<form class="card row" data-form="proveedores">
-    <label>Categoría<input name="categoria" list="cats" required placeholder="Ej. Catering"></label>
-    <label>Proveedor<input name="nombre" required></label>
-    <label>Contacto<input name="contacto" placeholder="Teléfono o correo"></label>
-    <label>Calificación<select name="calificacion">${[5,4,3,2,1].map(n=>`<option value="${n}" ${n===3?'selected':''}>${n} ★</option>`).join('')}</select></label>
-    <label style="flex-basis:100%">Ventajas<input name="ventajas" placeholder="Qué tiene a favor"></label>
-    <label style="flex-basis:100%">Desventajas<input name="desventajas" placeholder="Qué tiene en contra"></label>
-    <button class="primary" type="submit">Crear proveedor</button>
-  </form>
-  ${bloques||'<p class="empty sec">Sin proveedores. Crea uno, luego agrega sus ítems con cantidad y precio unitario.</p>'}`;
-}
-
-/* Tarjeta de proveedor con selección múltiple: marcas los ítems y los cargas juntos a una actividad. */
-function provCard(p){
-  const its=p.items||[], total=totalProv(p)||Number(p.cotizacion)||0, open=cargaProv===p.id;
-  const acts=ordenCron();
-  const tabla=its.length?`<div class="tablewrap"><table>
-      <thead><tr><th>Seleccionar</th><th>Descripción</th><th>Unidad</th><th class="num">Cantidad</th><th class="num">P. unitario</th><th>Subcategoría</th><th class="num">Subtotal</th><th></th></tr></thead>
-      <tbody>${its.map(i=>`<tr>
-        <td><input type="checkbox" data-pick="${p.id}" data-i="${i.id}" ${picks[i.id]?'checked':''} aria-label="Seleccionar ${esc(i.descripcion)}"></td>
-        <td><input value="${esc(i.descripcion)}" data-item="${p.id}" data-i="${i.id}" data-field="descripcion" aria-label="Descripción del ítem" style="width:100%;min-width:180px"></td>
-        <td>${esc(i.unidad)||'—'}</td>
-        <td class="num"><input type="number" min="0" step="0.01" value="${Number(i.cantidad)||0}" data-item="${p.id}" data-i="${i.id}" data-field="cantidad" aria-label="Cantidad de ${esc(i.descripcion)}" style="width:90px;text-align:right"></td>
-        <td class="num"><input type="number" min="0" step="0.01" value="${Number(i.precio)||0}" ${i.porConfirmar?'disabled':''} data-item="${p.id}" data-i="${i.id}" data-field="precio" aria-label="Precio unitario de ${esc(i.descripcion)}" style="width:110px;text-align:right"><br><label class="inline msg" style="font-size:12px"><input type="checkbox" data-pc="${p.id}" data-i="${i.id}" ${i.porConfirmar?'checked':''}> Por confirmar</label></td>
-        <td><select data-itemsub="${p.id}" data-i="${i.id}" aria-label="Subcategoría de ${esc(i.descripcion)}">${subOpts(i.sub||'')}</select></td>
-        <td class="num">${i.porConfirmar?'<b>Por confirmar</b>':money(itemSub(i))}</td>
-        <td><button class="danger" data-act="delitem" data-id="${p.id}" data-i="${i.id}">Quitar</button></td>
-      </tr>`).join('')}</tbody></table></div>`
-    :'<p class="msg" style="margin-top:8px">Sin ítems. Agrégalos abajo con su cantidad y precio unitario.</p>';
-  const panel=open?`<div class="sub" style="background:var(--surface)">
-      <h3>Carga masiva a una actividad</h3>
-      ${!its.length?'<p class="msg">Agrega ítems primero.</p>':!acts.length?'<p class="msg">Crea una actividad en Cronograma para cargar este proveedor.</p>':`
-      <p class="msg">Marca los ítems de la tabla, elige la actividad y carga todos juntos. Todos entran al centro de costo elegido.</p>
-      <div class="row" style="margin-top:8px;align-items:flex-end">
-        <label style="flex-basis:300px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px">Actividad (centro de costo)
-          <select id="bulkact-${p.id}"><option value="">Elegir actividad…</option>${acts.map(a=>`<option value="${a.id}">${esc(a.hora||'')} ${esc(a.actividad)}</option>`).join('')}</select></label>
-        <button data-act="todosItems" data-id="${p.id}">Marcar / desmarcar todos</button>
-        <button class="primary" data-act="cargarSel" data-id="${p.id}">Cargar seleccionados</button>
-      </div>`}
-    </div>`:'';
-  return `<div class="sub">
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <div><h3>${esc(p.nombre)}</h3><div class="msg">${esc(p.contacto)||'Sin contacto'} · ${'★'.repeat(Number(p.calificacion)||0)||'—'}</div></div>
-      <div class="row" style="align-items:center">
-        <span class="num"><b>${money(total)}</b></span><span class="msg">catálogo</span>
-        <button data-act="abrirCarga" data-id="${p.id}" aria-expanded="${open}">${open?'Cerrar':'Cargar a cronograma'}</button>
-        <button class="danger" data-act="del" data-list="proveedores" data-id="${p.id}">Quitar</button>
-      </div>
-    </div>
-    ${(p.ventajas||p.desventajas)?`<p class="msg" style="margin-top:6px">${p.ventajas?'+ '+esc(p.ventajas):''}${p.ventajas&&p.desventajas?' · ':''}${p.desventajas?'− '+esc(p.desventajas):''}</p>`:''}
-    ${tabla}
-    <form class="row" data-form="item" style="margin-top:10px">
-      <input type="hidden" name="provId" value="${p.id}">
-      <label style="flex-basis:220px">Producto, insumo o servicio<input name="descripcion" required placeholder="Ej. Mesa redonda"></label>
-      <label>Unidad<input name="unidad" placeholder="und, m², servicio"></label>
-      <label>Cantidad<input type="number" name="cantidad" min="0" step="0.01" required></label>
-      <label>Precio unitario (S/)<input type="number" name="precio" min="0" step="0.01" required></label>
-      <label>Subcategoría (cotización)<select name="sub">${subOpts('')}</select></label>
-      <button type="submit">Agregar ítem</button>
-    </form>
-    ${panel}
-  </div>`;
-}
-
-function provCardAnterior(p){
-  const its=p.items||[], total=totalProv(p)||Number(p.cotizacion)||0, open=cargaProv===p.id;
-  const acts=ordenCron();
-  return `<div class="sub">
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <div><h3>${esc(p.nombre)}</h3><div class="msg">${esc(p.contacto)||'Sin contacto'} · ${'★'.repeat(Number(p.calificacion)||0)||'—'}</div></div>
-      <div class="row" style="align-items:center">
-        <span class="num"><b>${money(total)}</b></span><span class="msg">catálogo</span>
-        <button data-act="abrirCarga" data-id="${p.id}" aria-expanded="${open}">${open?'Cerrar':'Cargar a cronograma'}</button>
-        <button class="danger" data-act="del" data-list="proveedores" data-id="${p.id}">Quitar</button>
-      </div>
-    </div>
-    ${(p.ventajas||p.desventajas)?`<p class="msg" style="margin-top:6px">${p.ventajas?'+ '+esc(p.ventajas):''}${p.ventajas&&p.desventajas?' · ':''}${p.desventajas?'− '+esc(p.desventajas):''}</p>`:''}
-    ${its.length?`<div class="tablewrap"><table>
-      <thead><tr><th>Descripción</th><th>Unidad</th><th class="num">Cantidad</th><th class="num">P. unitario</th><th>Subcategoría</th><th class="num">Subtotal</th><th>Cargar a actividad</th><th></th></tr></thead>
-      <tbody>${its.map(i=>`<tr>
-        <td><input value="${esc(i.descripcion)}" data-item="${p.id}" data-i="${i.id}" data-field="descripcion" aria-label="Descripción del ítem" style="width:100%;min-width:180px"></td><td>${esc(i.unidad)||'—'}</td>
-        <td class="num"><input type="number" min="0" step="0.01" value="${Number(i.cantidad)||0}" data-item="${p.id}" data-i="${i.id}" data-field="cantidad" aria-label="Cantidad de ${esc(i.descripcion)}" style="width:90px;text-align:right"></td>
-        <td class="num"><input type="number" min="0" step="0.01" value="${Number(i.precio)||0}" data-item="${p.id}" data-i="${i.id}" data-field="precio" aria-label="Precio unitario de ${esc(i.descripcion)}" style="width:110px;text-align:right"></td>
-        <td><select data-itemsub="${p.id}" data-i="${i.id}" aria-label="Subcategoría de ${esc(i.descripcion)}">${subOpts(i.sub||'')}</select></td>
-        <td class="num">${money(itemSub(i))}</td>
-        <td>${acts.length?`<div class="inl"><select id="isel-${i.id}" aria-label="Actividad para ${esc(i.descripcion)}"><option value="">Elegir…</option>${acts.map(a=>`<option value="${a.id}">${esc(a.hora||'')} ${esc(a.actividad)}</option>`).join('')}</select><button data-act="cargaritem" data-id="${p.id}" data-i="${i.id}">Cargar</button></div>`:'<span class="msg">Crea una actividad</span>'}</td>
-        <td><button class="danger" data-act="delitem" data-id="${p.id}" data-i="${i.id}">Quitar</button></td>
-      </tr>`).join('')}</tbody></table></div>`
-    :'<p class="msg" style="margin-top:8px">Sin ítems. Agrégalos abajo con su cantidad y precio unitario.</p>'}
-    <form class="row" data-form="item" style="margin-top:10px">
-      <input type="hidden" name="provId" value="${p.id}">
-      <label style="flex-basis:220px">Producto, insumo o servicio<input name="descripcion" required placeholder="Ej. Mesa redonda"></label>
-      <label>Unidad<input name="unidad" placeholder="und, m², servicio"></label>
-      <label>Cantidad<input type="number" name="cantidad" min="0" step="0.01" required></label>
-      <label>Precio unitario (S/)<input type="number" name="precio" min="0" step="0.01" required></label>
-      <label>Subcategoría (cotización)<select name="sub">${subOpts('')}</select></label>
-      <button type="submit">Agregar ítem</button>
-    </form>
-    ${open?`<div class="sub" style="background:var(--surface)">
-      <h3>Asigna cada ítem a una actividad</h3>
-      <p class="msg">Cada ítem puede ir a una actividad distinta. Los que dejes en "No cargar" no entran.</p>
-      ${its.length&&acts.length?`<div class="row" style="margin-top:8px"><label style="flex-basis:280px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px">Asignar todos a
-          <select data-bulk="${p.id}"><option value="">—</option>${acts.map(a=>`<option value="${a.id}">${esc(a.hora||'')} ${esc(a.actividad)}</option>`).join('')}</select></label></div>`:''}
-      ${its.length&&acts.length?`<div class="tablewrap"><table>
-        <thead><tr><th>Ítem</th><th class="num">Subtotal</th><th>Actividad (centro de costo)</th></tr></thead>
-        <tbody>${its.map(i=>`<tr><td>${esc(i.descripcion)} <span class="msg">${num(i.cantidad)} ${esc(i.unidad)} × ${money(i.precio)}</span></td><td class="num">${money(itemSub(i))}</td>
-          <td><select data-itemsel="${p.id}" data-i="${i.id}" aria-label="Actividad para ${esc(i.descripcion)}"><option value="">No cargar</option>${acts.map(a=>`<option value="${a.id}">${esc(a.hora||'')} ${esc(a.actividad)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>
-        <div class="row" style="margin-top:10px"><button class="primary" data-act="cargar" data-id="${p.id}">Cargar ítems asignados</button></div>`
-      :!its.length?'<p class="msg" style="margin-top:8px">Agrega ítems primero.</p>'
-      :'<p class="msg" style="margin-top:8px">Crea una actividad en Cronograma para cargar este proveedor.</p>'}
-    </div>`:''}
-  </div>`;
-}
-
-/* Presupuesto final: una línea por cada gasto directo y cada ítem tercerizado elegido. */
-function lineasPresupuesto(){
-  const L=[], nom=a=>`${a.hora||''} ${a.actividad}`.trim();
-  ordenCron().forEach(a=>{
-    gastosDe(a.id).forEach(g=>L.push({actividad:nom(a),tipo:'Gasto directo',concepto:g.concepto,proveedor:g.proveedor||'',cantidad:1,unidad:'',unitario:eff(g),subtotal:eff(g),pagado:g.pagado?'Sí':'No'}));
-    if(a.tercerizado) (a.cotizaciones||[]).forEach(q=>(q.items||[]).filter(i=>i.sel).forEach(i=>L.push({actividad:nom(a),tipo:'Servicio tercerizado',concepto:i.descripcion,proveedor:q.proveedor,cantidad:Number(i.cantidad)||0,unidad:i.unidad||'',unitario:Number(i.precio)||0,subtotal:itemSub(i),pagado:''})));
-  });
-  generales().forEach(g=>L.push({actividad:'General (sin actividad)',tipo:'Gasto directo',concepto:g.concepto,proveedor:g.proveedor||'',cantidad:1,unidad:'',unitario:eff(g),subtotal:eff(g),pagado:g.pagado?'Sí':'No'}));
-  return L;
-}
-
-function descargarCSV(){
-  const L=lineasPresupuesto(), pres=Number(S.evento.presupuesto)||0, tot=L.reduce((s,l)=>s+l.subtotal,0);
-  const filas=[
-    ['Evento',S.evento.nombre],['Fecha',S.evento.fecha||''],['Invitados',S.evento.invitados||0],
-    ['Presupuesto asignado',pres.toFixed(2)],['Total final',tot.toFixed(2)],['Diferencia',(pres-tot).toFixed(2)],
-    [],
-    ['Centro de costo','Tipo','Concepto','Proveedor','Cantidad','Unidad','Precio unitario','Subtotal','Pagado'],
-    ...L.map(l=>[l.actividad,l.tipo,l.concepto,l.proveedor,l.cantidad,l.unidad,l.unitario.toFixed(2),l.subtotal.toFixed(2),l.pagado]),
-    [],
-    ['TOTAL','','','','','','',tot.toFixed(2),'']
-  ];
-  const csv='﻿'+filas.map(f=>f.map(c=>`"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
-  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  const a=document.createElement('a');
-  a.href=url; a.download=`presupuesto-${(S.evento.nombre||'evento').replace(/[^\w-]+/g,'_')}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-
-function vPresupuesto(){
-  const L=lineasPresupuesto(), tot=L.reduce((s,l)=>s+l.subtotal,0), pres=Number(S.evento.presupuesto)||0;
-  const dir=L.filter(l=>l.tipo==='Gasto directo').reduce((s,l)=>s+l.subtotal,0), srv=tot-dir, dif=pres-tot;
-  const centros=[...ordenCron().map(a=>({k:`${a.hora||''} · ${a.actividad}`,d:sum(gastosDe(a.id)),s:servicio(a)})),{k:'General (sin actividad)',d:sum(generales()),s:0}];
-  const filasCentro=centros.map(c=>{const t=c.d+c.s;return `<tr><td>${esc(c.k)}</td><td class="num">${money(c.d)}</td><td class="num">${money(c.s)}</td><td class="num"><b>${money(t)}</b></td><td class="num">${tot?(t/tot*100).toFixed(1):'0.0'}%</td></tr>`;}).join('');
-  const filasDet=L.map(l=>`<tr><td>${esc(l.actividad)}</td><td>${esc(l.tipo)}</td><td>${esc(l.concepto)}</td><td>${esc(l.proveedor)||'—'}</td><td class="num">${num(l.cantidad)}</td><td>${esc(l.unidad)||'—'}</td><td class="num">${l.porConfirmar?'<b>Por confirmar</b>':money(l.unitario)}</td><td class="num">${l.porConfirmar?'Por confirmar':money(l.subtotal)}</td><td>${l.pagado||'—'}</td></tr>`).join('');
-  return `<div class="row no-print" style="justify-content:space-between;align-items:center">
-    <h2 style="margin:0">Presupuesto final</h2>
-    <div class="row"><button class="primary" data-act="csv">Descargar CSV (Excel)</button><button data-act="imprimir">Imprimir / guardar PDF</button></div>
-  </div>
-  <div class="card" style="margin-top:12px">
-    <h1 style="font-size:20px;margin:0">${esc(S.evento.nombre)||'Evento'}</h1>
-    <p class="msg">${esc(fmtFecha(S.evento.fecha))||'Fecha por definir'} · ${Number(S.evento.invitados)||0} invitados · ${esc(S.evento.lugar)||'Lugar por definir'}</p>
-    <div class="grid4" style="margin-top:12px">
-      <div class="card kpi"><span>Presupuesto asignado</span><b>${money(pres)}</b></div>
-      <div class="card kpi"><span>Gastos directos</span><b>${money(dir)}</b></div>
-      <div class="card kpi"><span>Servicios tercerizados</span><b>${money(srv)}</b></div>
-      <div class="card kpi"><span>Total final</span><b>${money(tot)}</b></div>
-      <div class="card kpi"><span>Diferencia</span><b style="color:${dif<0?'var(--bad)':'inherit'}">${money(dif)}</b></div>
-    </div>
-    <h2 class="sec">Resumen por centro de costo</h2>
-    <div class="tablewrap"><table>
-      <thead><tr><th>Actividad</th><th class="num">Gastos directos</th><th class="num">Servicio</th><th class="num">Total</th><th class="num">% del total</th></tr></thead>
-      <tbody>${filasCentro}<tr><td><b>Total</b></td><td class="num"><b>${money(dir)}</b></td><td class="num"><b>${money(srv)}</b></td><td class="num"><b>${money(tot)}</b></td><td class="num">100%</td></tr></tbody>
-    </table></div>
-    <h2 class="sec">Detalle</h2>
-    ${L.length?`<div class="tablewrap"><table>
-      <thead><tr><th>Centro de costo</th><th>Tipo</th><th>Concepto</th><th>Proveedor</th><th class="num">Cant.</th><th>Unidad</th><th class="num">P. unitario</th><th class="num">Subtotal</th><th>Pagado</th></tr></thead>
-      <tbody>${filasDet}<tr><td colspan="7"><b>Total final</b></td><td class="num"><b>${money(tot)}</b></td><td></td></tr></tbody>
-    </table></div>`:'<p class="empty">Aún no hay gastos ni servicios. Regístralos en Gastos o en los centros de costo del Cronograma.</p>'}
-  </div>`;
-}
-
-/* Presupuesto detallado: cada gasto directo y cada ítem tercerizado elegido, con su centro de costo, categoría y proveedor. */
-function lineasDetalle(){
-  const L=[], nom=a=>`${a.hora||''} ${a.actividad}`.trim();
-  const add=(a,o)=>L.push(Object.assign({actId:a?a.id:'general',actividad:a?nom(a):'General (sin actividad)'},o));
-  const gasto=(a,g)=>add(a,{tipo:'Gasto directo',concepto:g.concepto,categoria:g.categoria||'',sub:g.sub||'',proveedor:g.proveedor||'',cantidad:1,unidad:'',unitario:eff(g),estimado:Number(g.estimado)||0,real:Number(g.real)||0,subtotal:eff(g),pagado:!!g.pagado});
-  ordenCron().forEach(a=>{
-    gastosDe(a.id).forEach(g=>gasto(a,g));
-    if(a.tercerizado) (a.cotizaciones||[]).forEach(q=>{
-      const prov=S.proveedores.find(p=>p.id===q.id);
-      (q.items||[]).filter(i=>i.sel).forEach(i=>add(a,{tipo:'Servicio tercerizado',concepto:i.descripcion,categoria:i.sub?catDe(i.sub):(prov?prov.categoria:''),sub:i.sub||'',proveedor:q.proveedor,cantidad:Number(i.cantidad)||0,unidad:i.unidad||'',unitario:Number(i.precio)||0,estimado:itemSub(i),real:0,subtotal:itemSub(i),pagado:null,porConfirmar:!!i.porConfirmar}));
+/* Totales por partida. Utilidad: porcentaje por ítem, oculto para el cliente. */
+function porPartida(){
+  const m={};
+  S.proveedores.forEach(p=>(p.items||[]).forEach(i=>{
+    if(!i.cargado) return;
+    const k=i.sub||'';
+    const r=m[k]||(m[k]={costo:0,util:0,cliente:0,n:0,pend:0,items:[]});
+    (i.cargas||[]).forEach(l=>{
+      const v={...i,prov:p,cantidad:l.cant==null?i.cantidad:l.cant,_lid:l.id,_n:1};
+      r.items.push(v);
+      if(i.porConfirmar){r.pend++;return;}
+      const c=itemSub(v), u=c*(Number(i.utilidad)||0)/100;
+      r.costo+=c; r.util+=u; r.cliente+=c+u; r.n+=1;
     });
-  });
-  generales().forEach(g=>gasto(null,g));
-  S.partidas.forEach(p=>S.gastos.filter(g=>g.actividadId===p.id).forEach(g=>gasto({id:p.id,hora:'',actividad:p.nombre+' (partida)'},g)));
-  return L;
+  }));
+  return m;
 }
-function agrupar(L,key){const m={}; L.forEach(l=>{const k=l[key]||'Sin definir'; m[k]=(m[k]||0)+l.subtotal;}); return Object.entries(m).sort((a,b)=>b[1]-a[1]);}
+/* Horario en cadena: cada evento empieza cuando termina el anterior. */
+function sincronizarHoras(){let t=toMin(S.evento.inicio||'09:00');S.cron.forEach(a=>{if(a.horaFija) t=toMin(a.horaFija);a.hora=fromMin(t);t+=Number(a.duracion)||0;});}
+function finHora(h,d){if(!h)return'—';return fromMin(toMin(h)+(Number(d)||0));}
 
-function descargarCSVDetallado(){
-  const L=lineasDetalle(), pres=Number(S.evento.presupuesto)||0, tot=L.reduce((s,l)=>s+l.subtotal,0);
-  const filas=[
-    ['Evento',S.evento.nombre],['Fecha',S.evento.fecha||''],['Lugar',S.evento.lugar||''],['Invitados',S.evento.invitados||0],
-    ['Presupuesto asignado',pres.toFixed(2)],['Total final',tot.toFixed(2)],['Diferencia',(pres-tot).toFixed(2)],
-    [],
-    ['Centro de costo','Tipo','Concepto','Categoría','Proveedor','Cantidad','Unidad','Precio unitario','Estimado','Real','Subtotal','Pagado'],
-    ...L.map(l=>[l.actividad,l.tipo,l.concepto,l.categoria,l.proveedor,l.cantidad,l.unidad,l.unitario.toFixed(2),l.estimado.toFixed(2),l.real.toFixed(2),l.subtotal.toFixed(2),l.pagado===null?'—':(l.pagado?'Sí':'No')]),
-    [],['TOTAL','','','','','','','','','',tot.toFixed(2),''],
-    [],['RESUMEN POR CENTRO DE COSTO'],['Centro de costo','Total'],...agrupar(L,'actividad').map(([k,v])=>[k,v.toFixed(2)]),
-    [],['RESUMEN POR CATEGORÍA'],['Categoría','Total'],...agrupar(L,'categoria').map(([k,v])=>[k,v.toFixed(2)]),
-    [],['RESUMEN POR PROVEEDOR'],['Proveedor','Total'],...agrupar(L.filter(l=>l.proveedor),'proveedor').map(([k,v])=>[k,v.toFixed(2)])
-  ];
-  const csv='﻿'+filas.map(f=>f.map(c=>`"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
-  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  const a=document.createElement('a');
-  a.href=url; a.download=`presupuesto-detallado-${(S.evento.nombre||'evento').replace(/[^\w-]+/g,'_')}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
+/* ===== Pestaña 1: PROVEEDORES ===== */
+/* Producto: código automático, precio compra, utilidad % (manual) y precio venta calculado.
+   Solo los productos "cargados al presupuesto" entran a la cotización, con la partida que ya tienen asignada. */
+let filtroModo='lista', filtroTexto='';
+const precioVenta=i=>i.porConfirmar?0:(Number(i.precio)||0)*(1+(Number(i.utilidad)||0)/100);
+const etiquetaPartida=s=>s?String(s).replace('|',' · '):'Sin partida';
+function codigoItemNuevo(p){
+  const n=Math.max(0,...(p.items||[]).map(i=>{const m=String(i.codigo||'').match(/-(\d+)$/);return m?Number(m[1]):0;}))+1;
+  return p.codigo+'-'+String(n).padStart(2,'0');
 }
+function itemsDe(ids){const r=[];S.proveedores.forEach(p=>(p.items||[]).forEach(i=>{if(ids.includes(i.id)) r.push(i);}));return r;}
+/* Carga los productos marcados a su partida ya asignada. Si alguno no tiene partida, no se carga ninguno. */
+function cargarAlPresupuesto(ids){
+  const its=itemsDe(ids);
+  const sin=its.filter(i=>!i.sub);
+  if(sin.length) return `Error: ${sin.length} producto(s) no tienen partida asignada (${sin.slice(0,5).map(i=>i.descripcion).join(', ')}${sin.length>5?'…':''}). Asígnales una partida y vuelve a cargar; no se cargó ninguno.`;
+  its.forEach(i=>setCargas(i,[...(i.cargas||[]),{id:uid(),cant:null}]));
+  const partidas=new Set(its.map(i=>i.sub)).size;
+  return `${its.length} producto(s) cargados exitosamente en ${partidas} partida(s).`;
+}
+function setCargas(i,arr){i.cargas=arr; i.copias=arr.length; i.cargado=arr.length>0;}
+function quitarDelPresupuesto(ids){let n=0; itemsDe(ids).forEach(i=>{setCargas(i,[]);n++;}); return `${n} producto(s) quitados del presupuesto.`;}
 
-function vPresupuestoDetallado(){
-  const L=lineasDetalle(), tot=L.reduce((s,l)=>s+l.subtotal,0), pres=Number(S.evento.presupuesto)||0;
-  const pagado=L.filter(l=>l.pagado===true).reduce((s,l)=>s+l.subtotal,0), porPagar=tot-pagado, dif=pres-tot;
-  const dir=L.filter(l=>l.tipo==='Gasto directo').reduce((s,l)=>s+l.subtotal,0), srv=tot-dir;
-  const bloques=[...ordenCron().map(a=>({a,lines:L.filter(l=>l.actId===a.id)})),...S.partidas.map(p=>({a:null,p,lines:L.filter(l=>l.actId===p.id)})),{a:null,lines:L.filter(l=>l.actId==='general')}].filter(b=>b.a||b.p||b.lines.length);
-  const bloqueHTML=b=>{
-    const sub=b.lines.reduce((s,l)=>s+l.subtotal,0);
-    const titulo=b.a?`${esc(b.a.hora)} – ${finHora(b.a.hora,b.a.duracion)} · ${esc(b.a.actividad)}`:b.p?`${esc(b.p.nombre)} (partida)`:'General (sin actividad)';
-    const meta=b.a?`${Number(b.a.duracion)||0} min · ${esc(b.a.responsable)||'Sin responsable'}${b.a.tercerizado?' · Tercerizado':''}`:b.p?'Partida general, no ligada a una actividad':'Gastos que no están asignados a una actividad';
-    const alt=[];
-    return `<div class="card" style="margin-top:12px">
-      <div class="row" style="justify-content:space-between;align-items:baseline">
-        <div><h3>${titulo}</h3><p class="msg">${meta}</p></div>
-        <b class="num">Total: ${money(sub)}</b>
+let provAbierto=null;
+function tarjetaProv(p){
+  const its=p.items||[];
+  return `<button data-act="abrirProv" data-id="${p.id}" style="text-align:left;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer">
+    <span class="badge">${esc(p.codigo)}</span>
+    <div style="font-weight:700;font-size:16px;margin-top:6px">${esc(p.nombre)}</div>
+    <div class="msg">${its.length} producto(s) · ${money(totalProv(p))}</div>
+  </button>`;
+}
+function vProv(){
+  const abierto=provAbierto&&S.proveedores.find(x=>x.id===provAbierto);
+  if(abierto){
+    return `<div class="row no-print" style="justify-content:space-between;align-items:center">
+      <button data-act="volverProv">← Volver a proveedores</button>
+      <h2 style="margin:0">${esc(abierto.nombre)}</h2>
+    </div>
+    ${provCard(abierto)}`;
+  }
+  provAbierto=null;
+  const grupos={}; S.proveedores.forEach(x=>{const k=x.categoria||'Sin categoría';(grupos[k]=grupos[k]||[]).push(x);});
+  const bloques=Object.entries(grupos).map(([cat,ps])=>`<div class="card" style="margin-top:12px">
+    <h2 style="margin:0 0 10px">${esc(cat)}</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">${ps.map(tarjetaProv).join('')}</div>
+  </div>`).join('');
+  return `<form class="card row" data-form="proveedor">
+      <label>Código<input value="Se genera automáticamente" disabled></label>
+      <label>Categoría<input name="categoria" list="cats" required placeholder="Ej. Catering"></label>
+      <label>Proveedor<input name="nombre" required></label>
+      <label>Contacto<input name="contacto" placeholder="Teléfono o correo"></label>
+      <button class="primary" type="submit">Crear proveedor</button>
+    </form>
+    <div class="card no-print" style="margin-top:12px">
+      <p class="msg" style="margin-top:0">La data de proveedores incluye productos, precios, utilidades, partidas y fotos.</p>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" data-act="exportProv">EXPORTAR DATA PROVEEDORES</button>
+        <button class="primary" data-act="elegirProv">CARGAR DATA PROVEEDORES</button>
+        <button data-act="imprimir">Ver / guardar PDF</button>
+        <input type="file" id="archivoProv" accept=".json,application/json" hidden>
       </div>
-      ${b.lines.length?`<div class="tablewrap"><table>
-        <thead><tr><th>Tipo</th><th>Concepto</th><th>Categoría</th><th>Proveedor</th><th class="num">Cant.</th><th>Unidad</th><th class="num">P. unit.</th><th class="num">Estimado</th><th class="num">Real</th><th class="num">Subtotal</th><th>Pagado</th></tr></thead>
-        <tbody>${b.lines.map(l=>`<tr>
-          <td>${esc(l.tipo)}</td><td>${esc(l.concepto)}</td><td>${esc(l.categoria)||'—'}</td><td>${esc(l.proveedor)||'—'}</td>
-          <td class="num">${num(l.cantidad)}</td><td>${esc(l.unidad)||'—'}</td><td class="num">${money(l.unitario)}</td>
-          <td class="num">${l.tipo==='Gasto directo'?money(l.estimado):'—'}</td>
-          <td class="num">${l.tipo==='Gasto directo'&&l.real>0?money(l.real):'—'}</td>
-          <td class="num"><b>${money(l.subtotal)}</b></td>
-          <td>${l.pagado===null?'—':l.pagado?'Sí':'No'}</td></tr>`).join('')}</tbody>
-      </table></div>`:'<p class="msg" style="margin-top:8px">Sin gastos ni servicios en esta actividad.</p>'}
-      ${alt.length?`<p class="msg" style="margin-top:8px">Alternativas no elegidas: ${alt.join(', ')}.</p>`:''}
-    </div>`;
-  };
-  const cats=agrupar(L,'categoria'), provs=agrupar(L.filter(l=>l.proveedor),'proveedor');
-  const filasCat=cats.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${money(v)}</td><td class="num">${tot?(v/tot*100).toFixed(1):'0.0'}%</td></tr>`).join('');
-  const filasProv=provs.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${money(v)}</td><td class="num">${tot?(v/tot*100).toFixed(1):'0.0'}%</td></tr>`).join('');
-  return `<div class="row no-print" style="justify-content:space-between;align-items:center">
-    <h2 style="margin:0">Presupuesto final detallado</h2>
-    <div class="row"><button class="primary" data-act="csv">Descargar CSV (Excel)</button><button data-act="imprimir">Imprimir / guardar PDF</button></div>
-  </div>
-  <div style="margin-top:12px">
-    <h2 class="sec" style="margin-top:0">Detalle por centro de costo</h2>
-    ${bloques.map(bloqueHTML).join('')||'<p class="empty">Aún no hay actividades ni gastos. Regístralos en Cronograma o Gastos.</p>'}
-    <h2 class="sec">Resumen por categoría</h2>
-    ${cats.length?`<div class="tablewrap"><table><thead><tr><th>Categoría</th><th class="num">Total</th><th class="num">% del total</th></tr></thead><tbody>${filasCat}</tbody></table></div>`:'<p class="msg">Sin datos.</p>'}
-    <h2 class="sec">Resumen por proveedor</h2>
-    ${provs.length?`<div class="tablewrap"><table><thead><tr><th>Proveedor</th><th class="num">Total</th><th class="num">% del total</th></tr></thead><tbody>${filasProv}</tbody></table></div>`:'<p class="msg">Sin proveedores asignados todavía.</p>'}
+    </div>
+    ${vComparador()}
+    ${bloques||'<p class="empty sec">Sin proveedores. Crea uno y luego agrega sus productos con cantidad y precio de compra.</p>'}`;
+}
+
+/* Comparador: desplegable con los productos, o búsqueda manual por nombre. */
+function nombresProductos(){return [...new Set(S.proveedores.flatMap(p=>(p.items||[]).map(i=>String(i.descripcion||'').trim())).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));}
+function vComparador(){
+  const nombres=nombresProductos();
+  return `<div class="card no-print" style="margin-top:12px">
+    <h2 style="margin-top:0">Comparar precios entre proveedores</h2>
+    <div class="row">
+      <label style="flex-basis:320px">Producto
+        <select id="filtroSel"><option value="">Elegir producto…</option>${nombres.map(n=>`<option value="${esc(n)}" ${filtroModo==='lista'&&filtroTexto===n?'selected':''}>${esc(n)}</option>`).join('')}<option value="__manual__" ${filtroModo==='manual'?'selected':''}>Búsqueda manual…</option></select></label>
+      ${filtroModo==='manual'?`<label style="flex-basis:320px">Buscar por nombre<input id="filtroManual" value="${esc(filtroTexto)}" placeholder="Escribe parte del nombre" autocomplete="off"></label>`:''}
+    </div>
+    <div id="resultados" style="margin-top:8px">${resultados()}</div>
   </div>`;
 }
+function resultados(){
+  const q=filtroTexto.trim().toLowerCase();
+  if(!q) return '<p class="msg">Elige un producto o escribe parte del nombre para ver el precio de cada proveedor.</p>';
+  const filas=[];
+  S.proveedores.forEach(p=>(p.items||[]).forEach(i=>{
+    const d=String(i.descripcion||'').trim().toLowerCase();
+    const ok=filtroModo==='manual'?d.includes(q):d===q;
+    if(ok) filas.push({p,i,venta:precioVenta(i)});
+  }));
+  if(!filas.length) return '<p class="empty">No hay productos con ese nombre.</p>';
+  const validos=filas.filter(f=>!f.i.porConfirmar).map(f=>f.venta);
+  const min=validos.length?Math.min(...validos):null;
+  return `<div class="tablewrap"><table>
+    <thead><tr><th>Seleccionar</th><th>Código</th><th>Proveedor</th><th>Producto</th><th>Unidad</th><th class="num">Cant.</th><th class="num">Precio compra</th><th class="num">Utilidad</th><th class="num">Precio venta</th><th>Partida</th><th>En presupuesto</th></tr></thead>
+    <tbody>${filas.map(({p,i,venta})=>{const mejor=!i.porConfirmar&&venta===min;return `<tr>
+      <td><input type="checkbox" data-pick="${i.id}" ${picks[i.id]?'checked':''} aria-label="Seleccionar ${esc(i.descripcion)} de ${esc(p.nombre)}"></td>
+      <td><span class="badge">${esc(i.codigo)}</span></td><td>${esc(p.nombre)}</td><td>${esc(i.descripcion)}</td><td>${esc(i.unidad)||'—'}</td>
+      <td class="num">${num(i.cantidad)}</td><td class="num">${i.porConfirmar?'Por confirmar':money(i.precio)}</td>
+      <td class="num">${num(i.utilidad)} %</td>
+      <td class="num ${mejor?'best':''}">${i.porConfirmar?'Por confirmar':money(venta)}${mejor?' <span class="msg">más bajo</span>':''}</td>
+      <td>${esc(etiquetaPartida(i.sub))}</td>
+      <td>${i.cargado?`<span class="badge">Sí${(i.copias||1)>1?` × ${i.copias}`:''}</span>`:'No'}</td></tr>`;}).join('')}</tbody></table></div>
+    <div class="row" style="margin-top:10px"><button class="primary" data-act="cargarSel">CARGAR A PRESUPUESTO</button></div>`;
+}
 
-/* Cotización para el cliente: solo categorías y subcategorías con su monto, sin proveedores ni costos internos. */
-/* Cada subcategoría se despliega para ver sus ítems y gastos (sin nombres de proveedor). */
-/* Formulario de datos del cliente y del evento (se abre desde el encabezado). */
-function vDatos(){
-  const c=S.cliente||{}, e=S.evento;
-  const f=(n,l,v,t='text',extra='')=>`<label style="flex-basis:240px">${l}<input name="${n}" type="${t}" value="${esc(v)}" ${extra}></label>`;
-  return `<div class="card" style="margin-top:12px">
-    <h2 style="margin-top:0">Datos del cliente y del evento</h2>
-    <form class="row" data-form="datos">
-      <p class="msg" style="flex-basis:100%"><b>Cliente</b></p>
-      ${f('cliente','Nombre del cliente',c.nombre)}
-      ${f('empresa','Empresa',c.empresa)}
-      ${f('ruc','RUC / DNI',c.ruc)}
-      ${f('contacto','Persona de contacto',c.contacto)}
-      ${f('telefono','Teléfono',c.telefono)}
-      ${f('correo','Correo',c.correo,'email')}
-      <p class="msg" style="flex-basis:100%;margin-top:8px"><b>Evento</b></p>
-      ${f('nombreEvento','Nombre del evento',e.nombre)}
-      ${f('fecha','Fecha',e.fecha,'date')}
-      ${f('lugar','Lugar',e.lugar)}
-      ${f('invitados','Invitados',e.invitados,'number','min="0" step="1"')}
-      <div class="row" style="flex-basis:100%;margin-top:8px"><button class="primary" type="submit">Guardar datos</button><button type="button" data-act="datosToggle">Cerrar</button></div>
+function provCard(p){
+  const its=p.items||[], costo=totalProv(p);
+  const filas=its.map(i=>`<tr>
+    <td><input type="checkbox" data-pick="${i.id}" ${picks[i.id]?'checked':''} aria-label="Seleccionar ${esc(i.descripcion)}"></td>
+    <td><span class="badge">${esc(i.codigo)}</span></td>
+    <td><input value="${esc(i.descripcion)}" data-edit="item" data-id="${p.id}" data-i="${i.id}" data-field="descripcion" aria-label="Descripción" style="width:100%;min-width:170px"></td>
+    <td><input value="${esc(i.unidad)}" data-edit="item" data-id="${p.id}" data-i="${i.id}" data-field="unidad" aria-label="Unidad" style="width:90px"></td>
+    <td class="num"><input type="number" min="0" step="0.01" value="${Number(i.cantidad)||0}" data-edit="item" data-id="${p.id}" data-i="${i.id}" data-field="cantidad" aria-label="Cantidad" style="width:90px;text-align:right"></td>
+    <td class="num"><input type="number" min="0" step="0.01" value="${Number(i.precio)||0}" ${i.porConfirmar?'disabled':''} data-edit="item" data-id="${p.id}" data-i="${i.id}" data-field="precio" aria-label="Precio compra" style="width:110px;text-align:right"><br><label class="inline msg" style="font-size:12px"><input type="checkbox" data-pc="${i.id}" data-id="${p.id}" ${i.porConfirmar?'checked':''}> Por confirmar</label></td>
+    <td class="num"><b>${i.porConfirmar?'Por confirmar':money(itemSub(i))}</b></td>
+    <td class="num"><input type="number" min="0" step="0.5" value="${Number(i.utilidad)||0}" data-edit="item" data-id="${p.id}" data-i="${i.id}" data-field="utilidad" aria-label="Utilidad %" style="width:80px;text-align:right"> %</td>
+    <td class="num">${i.porConfirmar?'<b>Por confirmar</b>':money(precioVenta(i))}</td>
+    <td><select data-edit="item" data-id="${p.id}" data-i="${i.id}" data-field="sub" aria-label="Partida">${subOpts(i.sub||'')}</select></td>
+    <td class="no-print"><label class="inline"><input type="checkbox" data-cargado="${i.id}" data-id="${p.id}" ${i.cargado?'checked':''} ${i.sub?'':'disabled'}> Cargado</label></td>
+    <td class="no-print" style="white-space:nowrap"><label class="badge" style="cursor:pointer">📷 Subir<input type="file" accept="image/*" data-foto="${i.id}" data-id="${p.id}" style="display:none"></label> ${i.foto?`<button data-act="verFoto" data-i="${i.id}" aria-label="Ver foto" title="Ver foto" style="padding:2px 7px">👁</button>`:''}</td>
+    <td><button class="danger" data-act="delitem" data-id="${p.id}" data-i="${i.id}">Quitar</button></td>
+  </tr>${fotoAbierta===i.id&&i.foto?`<tr class="no-print"><td colspan="13"><div class="row" style="align-items:flex-start"><img src="${i.foto}" alt="${esc(i.descripcion)}" style="max-width:260px;border-radius:8px;border:1px solid var(--line)"><div><button class="danger" data-act="quitarFoto" data-id="${p.id}" data-i="${i.id}">Quitar foto</button></div></div></td></tr>`:''}`).join('');
+  return `<div class="sub">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <div class="row" style="align-items:center">
+        <span class="badge">${esc(p.codigo)}</span>
+        <input value="${esc(p.nombre)}" data-edit="prov" data-id="${p.id}" data-field="nombre" aria-label="Nombre del proveedor" style="font-weight:700;min-width:200px">
+        <input value="${esc(p.contacto)}" data-edit="prov" data-id="${p.id}" data-field="contacto" aria-label="Contacto" placeholder="Contacto" style="min-width:180px">
+      </div>
+      <div class="row" style="align-items:center">
+        <span class="num"><b>${money(costo)}</b></span><span class="msg">costo de compra</span>
+        <button class="danger" data-act="del" data-list="proveedores" data-id="${p.id}">Quitar proveedor</button>
+      </div>
+    </div>
+    <div class="row no-print" style="margin-top:10px;align-items:flex-end;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px">
+      <span class="msg" style="flex-basis:100%">Aplicar a todos los productos de este proveedor:</span>
+      <label style="flex-basis:120px">Utilidad (%)<input type="number" id="utilProv-${p.id}" min="0" step="0.5" placeholder="%"></label>
+      <button data-act="utilProv" data-id="${p.id}" ${its.length?'':'disabled'}>Aplicar utilidad</button>
+      <label style="flex-basis:260px">Partida<select id="partProv-${p.id}">${subOpts('')}</select></label>
+      <button data-act="partidaProv" data-id="${p.id}" ${its.length?'':'disabled'}>Asignar partida</button>
+    </div>
+    ${its.length?`<div class="tablewrap"><table>
+      <thead><tr><th></th><th>Código</th><th>Producto / servicio</th><th>Unidad</th><th class="num">Cant.</th><th class="num">Precio unit. compra</th><th class="num">Costo total</th><th class="num">Utilidad</th><th class="num">Precio venta</th><th>Partida</th><th class="no-print">Presupuesto</th><th class="no-print">Foto</th><th></th></tr></thead>
+      <tbody>${filas}</tbody></table></div>`
+    :'<p class="msg" style="margin-top:8px">Sin productos todavía.</p>'}
+    <form class="row" data-form="item" style="margin-top:10px">
+      <input type="hidden" name="provId" value="${p.id}">
+      <label style="flex-basis:220px">Producto o servicio<input name="descripcion" required></label>
+      <label>Unidad<input name="unidad" placeholder="und, m², servicio"></label>
+      <label>Cantidad<input type="number" name="cantidad" min="0" step="0.01" required></label>
+      <label>Precio compra (S/)<input type="number" name="precio" min="0" step="0.01" required></label>
+      <label>Utilidad (%)<input type="number" name="utilidad" min="0" step="0.5" value="0"></label>
+      <label>Partida<select name="sub">${subOpts('')}</select></label>
+      <div data-drop="${p.id}" style="flex-basis:100%">${zonaFoto(p.id)}</div>
+      <button type="submit">Agregar producto</button>
     </form>
   </div>`;
 }
 
-window.addEventListener('beforeprint',()=>document.querySelectorAll('details.det').forEach(d=>d.open=true));
+/* Botón flotante, a la derecha y centrado en vertical: carga los productos marcados a su partida. */
+function botonFlotante(){
+  return `<button class="primary no-print" data-act="cargarSel" style="position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:20;border-radius:999px;padding:12px 18px;box-shadow:0 4px 14px rgba(0,0,0,.25)">CARGAR A PRESUPUESTO</button>`;
+}
+function barraMasiva(){
+  return `<div class="card no-print" style="margin-top:12px;position:sticky;bottom:8px">
+    <p class="msg"><b>Acciones sobre productos marcados</b></p>
+    <div class="row" style="margin-top:6px">
+      <label style="flex-basis:260px">Asignar partida<select id="masivoSub">${subOpts('')}</select></label>
+      <button data-act="masivoSub">Asignar partida</button>
+      <label style="flex-basis:120px">Utilidad (%)<input type="number" id="masivoUtil" min="0" step="0.5" placeholder="%"></label>
+      <button data-act="masivoUtil">Aplicar utilidad</button>
+      <button class="primary" data-act="cargarSel">CARGAR A PRESUPUESTO</button>
+      <button data-act="quitarSel">Quitar del presupuesto</button>
+      <button data-act="todosItems">Marcar / desmarcar todos</button>
+    </div>
+  </div>`;
+}
+
+/* Zona para la foto del producto nuevo: elegir archivo o soltar la imagen aquí. */
+function zonaFoto(pid){
+  return fotoNueva[pid]
+    ? `<div class="row" style="align-items:center;border:1px dashed var(--line);border-radius:8px;padding:8px"><img src="${fotoNueva[pid]}" alt="Foto del producto nuevo" style="max-height:90px;border-radius:6px"><span class="msg">Foto lista para guardar con el producto.</span><button type="button" data-act="quitarFotoNueva" data-id="${pid}">Quitar foto</button></div>`
+    : `<div style="border:1px dashed var(--line);border-radius:8px;padding:12px;text-align:center;color:var(--muted)">Foto del producto (opcional): arrastra una imagen aquí o <label style="text-decoration:underline;cursor:pointer;color:var(--accent)">elige un archivo<input type="file" accept="image/*" data-fotonueva="${pid}" style="display:none"></label></div>`;
+}
+
+/* ===== Pestaña 2: CLIENTE ===== */
+function vCliente(){
+  const c=S.cliente, e=S.evento, z=S.cotiz;
+  const f=(n,l,v,t='text',extra='')=>`<label style="flex-basis:240px">${l}<input name="${n}" type="${t}" value="${esc(v)}" ${extra}></label>`;
+  return `<form class="card row" data-form="cliente">
+    <p class="msg" style="flex-basis:100%"><b>Datos del cliente</b></p>
+    ${f('cliente','Nombre del cliente',c.nombre)}
+    ${f('empresa','Empresa',c.empresa)}
+    ${f('ruc','RUC / DNI',c.ruc)}
+    ${f('contacto','Persona de contacto',c.contacto)}
+    ${f('telefono','Teléfono',c.telefono)}
+    ${f('correo','Correo',c.correo,'email')}
+    <p class="msg" style="flex-basis:100%;margin-top:8px"><b>Datos del evento</b></p>
+    ${f('nombreEvento','Nombre del evento',e.nombre)}
+    ${f('fecha','Fecha',e.fecha,'date')}
+    ${f('lugar','Lugar',e.lugar)}
+    ${f('invitados','Invitados',e.invitados,'number','min="0" step="1"')}
+    ${f('inicio','Hora de inicio del cronograma',e.inicio,'time')}
+    <p class="msg" style="flex-basis:100%;margin-top:8px"><b>Condiciones de la cotización</b></p>
+    ${f('admin','Costos administrativos (%)',z.admin,'number','min="0" step="0.5"')}
+    ${f('contingencia','Contingencia (%)',z.contingencia,'number','min="0" max="20" step="0.5"')}
+    <label class="inline" style="flex-basis:100%"><input type="checkbox" name="igv" ${z.igv?'checked':''}> Aplicar IGV (18 %)</label>
+    <div class="row" style="flex-basis:100%;margin-top:8px"><button class="primary" type="submit">Guardar datos</button></div>
+  </form>`;
+}
+
+/* ===== Pestaña 3: CRONOGRAMA (eventos en secuencia, con tiempo, comentarios e indicaciones) ===== */
+function vCron(){
+  const n=S.cron.length;
+  const filas=S.cron.map((a,k)=>`<div class="card" style="margin-top:12px">
+    <div class="row" style="align-items:center;justify-content:space-between">
+      <div class="row" style="align-items:center">
+        <label class="inline msg" style="font-size:12px">Hora <input type="time" value="${esc(a.horaFija||'')}" data-edit="cron" data-id="${a.id}" data-field="horaFija" aria-label="Hora de inicio" style="width:120px"></label>
+        <span class="num"><b>${esc(a.hora)} – ${finHora(a.hora,a.duracion)}</b></span>
+        <input value="${esc(a.evento)}" data-edit="cron" data-id="${a.id}" data-field="evento" aria-label="Evento" style="font-weight:700;min-width:240px">
+      </div>
+      <div class="row" style="align-items:center">
+        <span class="inl msg">Duración <input type="number" min="5" step="5" value="${Number(a.duracion)||0}" data-edit="cron" data-id="${a.id}" data-field="duracion" aria-label="Duración en minutos" style="width:84px"> min</span>
+        <button data-act="mover" data-id="${a.id}" data-dir="-1" ${k===0?'disabled':''} aria-label="Subir">↑</button>
+        <button data-act="mover" data-id="${a.id}" data-dir="1" ${k===n-1?'disabled':''} aria-label="Bajar">↓</button>
+        <button class="danger" data-act="del" data-list="cron" data-id="${a.id}">Quitar</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label style="flex-basis:300px">Comentarios<textarea data-edit="cron" data-id="${a.id}" data-field="comentario" style="min-height:50px">${esc(a.comentario)}</textarea></label>
+      <label style="flex-basis:300px">Indicaciones<textarea data-edit="cron" data-id="${a.id}" data-field="indicaciones" style="min-height:50px">${esc(a.indicaciones)}</textarea></label>
+    </div>
+  </div>`).join('');
+  return `<div class="row no-print" style="justify-content:space-between;align-items:center"><h2 style="margin:0">Cronograma del evento</h2><button data-act="imprimirCron">Imprimir / guardar PDF</button></div>
+  <form class="card row" data-form="cron">
+    <label style="flex-basis:260px">Evento<input name="evento" required placeholder="Ej. Bienvenida y brindis"></label>
+    <label>Hora de inicio (opcional)<input type="time" name="hora"></label>
+    <label>Duración (min)<input type="number" name="duracion" min="5" step="5" value="30" required></label>
+    <label style="flex-basis:100%">Comentarios<input name="comentario" placeholder="Opcional"></label>
+    <label style="flex-basis:100%">Indicaciones<input name="indicaciones" placeholder="Opcional"></label>
+    <button class="primary" type="submit">Agregar evento al final</button>
+  </form>
+  <p class="msg" style="margin-top:8px">Si pones hora, el evento empieza a esa hora. Si la dejas vacía, empieza cuando termina el anterior. El primero usa la hora de inicio de la pestaña Cliente.</p>
+  ${filas||'<p class="empty sec">Sin eventos. Agrega el primero con el formulario de arriba.</p>'}`;
+}
+
+/* ===== Pestaña 4: COTIZACIÓN AL CLIENTE ===== */
+/* Partidas: se pueden encender o apagar; las apagadas no suman. La utilidad no se muestra: el precio ya la incluye. */
 function vCotizacion(){
-  const L=lineasDetalle(), porSub={};
-  L.forEach(l=>{const k=l.sub||''; porSub[k]=(porSub[k]||0)+l.subtotal;});
-  const sinClas=porSub['']||0;
-  const fila=(k,titulo)=>{
-    const lines=L.filter(l=>(l.sub||'')===k), m=porSub[k]||0;
-    return `<details class="det" style="border-top:1px solid var(--line,#e5e5e0)">
-      <summary style="display:flex;justify-content:space-between;gap:12px;cursor:pointer;padding:10px 0;list-style:none">
-        <span>${esc(titulo)} <span class="msg">· ${lines.length} ${lines.length===1?'ítem':'ítems'}</span></span>
-        <span class="num"><b>${money(m)}</b></span>
+  const P=porPartida(), z=S.cotiz;
+  const pk=(cat,s)=>cat+'|'+s;
+  const aplica=k=>!S.off[k];
+  const fila=(k,titulo,unid)=>{
+    const r=P[k]||{cliente:0,items:[],pend:0,n:0}, on=aplica(k);
+    const lines=r.items;
+    return `<details class="det ${(lines.length&&on)?'':'vacia-print'}" style="border-top:1px solid var(--line);${on?'':'opacity:.55'}">
+      <summary style="display:flex;justify-content:space-between;gap:12px;cursor:pointer;padding:10px 0;list-style:none;align-items:center">
+        <span><label class="inline no-print" style="margin-right:8px" onclick="event.stopPropagation()"><input type="checkbox" data-off="${esc(k)}" ${on?'checked':''} aria-label="Aplica"> Aplica</label>
+          ${esc(titulo)}${unid?` <span class="msg">· ${esc(unid)}</span>`:''} <span class="msg">· ${lines.length} ${lines.length===1?'ítem':'ítems'}${r.pend?` · ${r.pend} por confirmar`:''}</span></span>
+        <span class="num"><b>${on?money(r.cliente):'No aplica'}</b></span>
       </summary>
-      ${lines.length?`<div class="tablewrap" style="margin-bottom:8px"><table>
-        <thead><tr><th>Detalle</th><th class="num">Cant.</th><th class="num">P. unit.</th><th class="num">Subtotal</th></tr></thead>
-        <tbody>${lines.map(l=>`<tr><td>${esc(l.concepto)}</td><td class="num">${num(l.cantidad)} ${esc(l.unidad)}</td><td class="num">${l.porConfirmar?'<b>Por confirmar</b>':money(l.unitario)}</td><td class="num">${l.porConfirmar?'Por confirmar':money(l.subtotal)}</td></tr>`).join('')}</tbody>
-      </table></div>`:'<p class="msg" style="padding-bottom:8px">Sin ítems asignados.</p>'}
+      ${S.extra.some(e=>e.cap===k.split('|')[0]&&e.nombre===k.split('|')[1])?`<div class="no-print" style="margin-bottom:8px"><button class="danger" data-act="delExtra" data-k="${esc(k)}">Eliminar esta partida manual</button></div>`:''}
+      ${lines.length?`<div class="tablewrap" style="margin-bottom:8px"><table class="detalle-cot" style="font-size:12px">
+        <thead><tr><th>Producto / servicio</th><th>Unidad de metrado</th><th class="num">Cantidad</th><th class="num">P. unitario</th><th class="num">Subtotal</th><th class="no-print"></th></tr></thead>
+        <tbody>${lines.map(l=>{const pu=(Number(l.precio)||0)*(1+(Number(l.utilidad)||0)/100);return `<tr><td>${esc(l.descripcion)}</td><td>${esc(l.unidad)}</td><td class="num"><input class="no-print" type="number" min="0" step="any" value="${Number(l.cantidad)||0}" data-cant="${l._lid}" data-i="${l.id}" style="width:80px;font-size:12px" aria-label="Cantidad de ${esc(l.descripcion)}"><span class="print-only">${num(l.cantidad)}</span></td><td class="num">${l.porConfirmar?'<b>Por confirmar</b>':money(pu)}</td><td class="num">${l.porConfirmar?'Por confirmar':money(itemSub(l)*(1+(Number(l.utilidad)||0)/100))}</td><td class="no-print"><button class="danger" data-act="quitarCot" data-i="${l.id}" data-c="${l._lid}" aria-label="Quitar esta carga de ${esc(l.descripcion)}">Quitar</button></td></tr>`;}).join('')}</tbody>
+      </table></div>`:'<p class="msg" style="padding-bottom:8px">Sin ítems asignados todavía.</p>'}
     </details>`;
   };
-  const bloques=S.catalogo.map(c=>{
-    const sub=c.subs.reduce((t,s)=>t+(porSub[c.cat+'|'+s]||0),0);
-    return `<div class="card" style="margin-top:12px">
-      <div class="row" style="justify-content:space-between;align-items:baseline"><h2 style="margin:0">${esc(c.cat)}</h2><b class="num">${money(sub)}</b></div>
-      ${c.subs.map(s=>fila(c.cat+'|'+s,s)).join('')}
+  const caps=catalogo().map(c=>{
+    const subs=c.subs.filter(s=>/^\d\d /.test(c.cat)||P[pk(c.cat,s)]||S.extra.some(e=>e.nombre===s&&e.cap===c.cat));
+    if(!subs.length) return '';
+    const tot=subs.reduce((t,s)=>{const k=pk(c.cat,s);return t+(aplica(k)&&P[k]?P[k].cliente:0);},0);
+    const hayItems=subs.some(s=>{const k=pk(c.cat,s);return aplica(k)&&P[k]&&P[k].items.length;});
+    return `<div class="card ${hayItems?'':'vacia-print'}" style="margin-top:12px">
+      <div class="row" style="justify-content:space-between;align-items:baseline"><h2 style="margin:0">${esc(c.cat)}</h2><b class="num">${money(tot)}</b></div>
+      ${subs.map(s=>fila(pk(c.cat,s),s,unidDe(s))).join('')}
     </div>`;
   }).join('');
-  const total=Object.keys(porSub).filter(k=>k!=='').reduce((t,k)=>t+porSub[k],0);
-  return `<div class="row no-print" style="justify-content:space-between;align-items:center">
+  const subtotal=Object.keys(P).filter(k=>k&&aplica(k)).reduce((t,k)=>t+P[k].cliente,0);
+  const admin=subtotal*(Number(z.admin)||0)/100;
+  const cont=(subtotal+admin)*(Number(z.contingencia)||0)/100;
+  const antes=subtotal+admin+cont, igv=z.igv?antes*0.18:0, total=antes+igv;
+  const sinClas=(P[''])?P[''].n+P[''].pend:0;
+  const fotos=[];
+  catalogo().forEach(c=>c.subs.forEach(s=>{const k=pk(c.cat,s); if(!aplica(k)||!P[k]) return; P[k].items.filter(i=>i.foto).forEach(i=>fotos.push({foto:i.foto,desc:i.descripcion,partida:s}));}));
+  const panelFotos=fotos.length?`<div class="card" style="margin-top:12px"><h2 style="margin-top:0">Fotografías de productos</h2><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">${fotos.map(f=>`<figure style="margin:0"><img src="${f.foto}" alt="${esc(f.desc)}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><figcaption style="font-size:13px;margin-top:4px"><b>${esc(f.desc)}</b><br><span class="msg">${esc(f.partida)}</span></figcaption></figure>`).join('')}</div></div>`:'';
+  const capOpts=COTIZ_CAPS.map(c=>`<option value="${esc(c.cat)}">${esc(c.cat)}</option>`).join('');
+  return `<style>.print-only{display:none}.salto-print{height:0}@media print{.salto-print{break-before:page;page-break-before:always}.vacia-print{display:none!important}.print-only{display:inline}.no-print-in{display:none!important}.detalle-cot td,.detalle-cot th{padding:4px 6px;vertical-align:middle}.detalle-cot thead{display:table-header-group}.resumen-print,.det,.card,tr,table{break-inside:avoid;page-break-inside:avoid}}</style>
+  <div class="row no-print" style="justify-content:space-between;align-items:center">
     <h2 style="margin:0">Cotización para el cliente</h2>
-    <div class="row"><button data-act="imprimir">Imprimir / guardar PDF</button></div>
+    <button data-act="imprimir">Imprimir / guardar PDF</button>
   </div>
   <div class="card" style="margin-top:12px">
     <h1 style="font-size:20px;margin:0">${esc(S.evento.nombre)||'Evento'}</h1>
     <p class="msg">${esc(fmtFecha(S.evento.fecha))||'Fecha por definir'} · ${Number(S.evento.invitados)||0} invitados · ${esc(S.evento.lugar)||'Lugar por definir'}</p>
-    <p class="msg" style="margin-top:6px"><b>Cliente:</b> ${esc((S.cliente||{}).nombre)||'Por definir'}${(S.cliente||{}).empresa?' · '+esc(S.cliente.empresa):''}${(S.cliente||{}).ruc?' · RUC/DNI '+esc(S.cliente.ruc):''}${(S.cliente||{}).contacto?' · Contacto: '+esc(S.cliente.contacto):''}${(S.cliente||{}).telefono?' · Tel. '+esc(S.cliente.telefono):''}${(S.cliente||{}).correo?' · '+esc(S.cliente.correo):''}</p>
+    <p class="msg" style="margin-top:6px"><b>Cliente:</b> ${esc(S.cliente.nombre)||'Por definir'}${S.cliente.empresa?' · '+esc(S.cliente.empresa):''}${S.cliente.ruc?' · RUC/DNI '+esc(S.cliente.ruc):''}${S.cliente.contacto?' · Contacto: '+esc(S.cliente.contacto):''}</p>
   </div>
-  ${bloques}
-  ${sinClas?`<div class="card no-print" style="margin-top:12px"><b>Por clasificar</b><p class="msg">Estos ítems aún no tienen subcategoría y no suman a la cotización.</p>${fila('','Sin subcategoría')}</div>`:''}
-  <div class="card" style="margin-top:12px"><div class="row" style="justify-content:space-between"><b>Total de la cotización</b><b class="num">${money(total)}</b></div></div>`;
-}
-
-function vCotizacionAnterior(){
-  const L=lineasDetalle(), porSub={};
-  L.forEach(l=>{const k=l.sub||''; porSub[k]=(porSub[k]||0)+l.subtotal;});
-  const sinClas=porSub['']||0;
-  const bloques=S.catalogo.map(c=>{
-    const filas=c.subs.map(s=>({s,m:porSub[c.cat+'|'+s]||0}));
-    const sub=filas.reduce((t,f)=>t+f.m,0);
-    return `<div class="card" style="margin-top:12px">
-      <h2 style="margin:0 0 6px">${esc(c.cat)}</h2>
-      <div class="tablewrap"><table>
-        <tbody>${filas.map(f=>`<tr><td>${esc(f.s)}</td><td class="num">${money(f.m)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td><b>Subtotal ${esc(c.cat)}</b></td><td class="num"><b>${money(sub)}</b></td></tr></tfoot>
-      </table></div>
-    </div>`;
-  }).join('');
-  const total=L.reduce((t,l)=>t+l.subtotal,0)-sinClas;
-  return `<div class="row no-print" style="justify-content:space-between;align-items:center">
-    <h2 style="margin:0">Cotización para el cliente</h2>
-    <div class="row"><button data-act="imprimir">Imprimir / guardar PDF</button></div>
+  <div class="card resumen-print" style="margin-top:12px">
+    <h2 style="margin-top:0">Resumen económico</h2>
+    <div class="tablewrap"><table><tbody>
+      <tr><td>Subtotal de partidas</td><td class="num">${money(subtotal)}</td></tr>
+      <tr><td>Costos administrativos (${num(z.admin)} %)</td><td class="num">${money(admin)}</td></tr>
+      <tr><td>Contingencia (${num(z.contingencia)} %)</td><td class="num">${money(cont)}</td></tr>
+      <tr><td>Subtotal antes de impuestos</td><td class="num">${money(antes)}</td></tr>
+      <tr><td>IGV (18 %)${z.igv?'':' · no aplica'}</td><td class="num">${money(igv)}</td></tr>
+    </tbody><tfoot><tr><td><b>TOTAL DEL EVENTO</b></td><td class="num"><b>${money(total)}</b></td></tr></tfoot></table></div>
   </div>
-  <div class="card" style="margin-top:12px">
-    <h1 style="font-size:20px;margin:0">${esc(S.evento.nombre)||'Evento'}</h1>
-    <p class="msg">${esc(fmtFecha(S.evento.fecha))||'Fecha por definir'} · ${Number(S.evento.invitados)||0} invitados · ${esc(S.evento.lugar)||'Lugar por definir'}</p>
-    <p class="msg" style="margin-top:6px"><b>Cliente:</b> ${esc((S.cliente||{}).nombre)||'Por definir'}${(S.cliente||{}).empresa?' · '+esc(S.cliente.empresa):''}${(S.cliente||{}).ruc?' · RUC/DNI '+esc(S.cliente.ruc):''}${(S.cliente||{}).contacto?' · Contacto: '+esc(S.cliente.contacto):''}${(S.cliente||{}).telefono?' · Tel. '+esc(S.cliente.telefono):''}${(S.cliente||{}).correo?' · '+esc(S.cliente.correo):''}</p>
-  </div>
-  ${bloques}
-  ${sinClas?`<p class="msg no-print" style="margin-top:12px">Pendiente de clasificar: ${money(sinClas)}. Asigna una subcategoría a esos gastos o ítems para que aparezcan en la cotización.</p>`:''}
-  <div class="card" style="margin-top:12px"><div class="row" style="justify-content:space-between"><b>Total de la cotización</b><b class="num">${money(total)}</b></div></div>`;
-}
-
-function vCom(){
-  const list=[...S.comentarios].sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(c=>`<div class="comment">
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <span><b>${esc(c.autor)}</b> <span class="badge">${esc(c.seccion)}</span></span>
-      <span class="msg">${new Date(c.fecha).toLocaleString('es-PE',{dateStyle:'medium',timeStyle:'short'})}</span>
-    </div>
-    <p style="margin:6px 0;white-space:pre-wrap">${esc(c.texto)}</p>
-    <button class="danger" data-act="del" data-list="comentarios" data-id="${c.id}">Eliminar</button>
-  </div>`).join('');
-  return `<form class="card row" data-form="comentarios">
-    <label>Autor<input name="autor" required placeholder="Tu nombre"></label>
-    <label>Sección<select name="seccion">${['General','Cronograma','Gastos','Proveedores'].map(s=>`<option>${s}</option>`).join('')}</select></label>
-    <label style="flex-basis:100%">Comentario<textarea name="texto" required placeholder="Acuerdos, pendientes o decisiones"></textarea></label>
-    <button class="primary" type="submit">Publicar comentario</button>
+  <form class="card row no-print" data-form="extra" style="margin-top:12px">
+    <label>Capítulo<select name="cap">${capOpts}</select></label>
+    <label style="flex-basis:260px">Nueva partida manual<input name="nombre" required placeholder="Ej. 2.6 Mesa de firmas"></label>
+    <label>Unidad<input name="unid" placeholder="Unidad, servicio…"></label>
+    <button type="submit">Agregar partida</button>
   </form>
-  ${list?`<div class="card" style="margin-top:12px">${list}</div>`:'<p class="empty sec">Sin comentarios. Úsalos para registrar acuerdos y decisiones del equipo.</p>'}`;
+  <div class="salto-print"></div>
+  ${caps}
+  ${panelFotos}
+  ${sinClas?`<p class="msg no-print" style="margin-top:12px">${sinClas} ítem(s) sin partida no suman a la cotización. Asígnalos en Proveedores.</p>`:''}`;
 }
 
-function vAjustes(){
-  const E=S.evento;
-  const f=(k,l,t='text')=>`<label>${l}<input type="${t}" data-evento="${k}" value="${esc(E[k])}" ${t==='number'?'min="0" step="0.01"':''}></label>`;
+/* ===== Pestaña 5: UTILIDADES (solo uso interno, no aparece en la cotización) ===== */
+function vUtilidades(){
+  const P=porPartida();
+  const filas=Object.keys(P).filter(k=>k).map(k=>{const r=P[k];return `<tr>
+    <td>${esc(k.replace('|',' · '))}${S.off[k]?' <span class="badge">No aplica</span>':''}</td>
+    <td class="num">${money(r.costo)}</td><td class="num">${money(r.util)}</td><td class="num"><b>${money(r.cliente)}</b></td></tr>`;}).join('');
+  const tc=Object.keys(P).reduce((t,k)=>t+P[k].costo,0), tu=Object.keys(P).reduce((t,k)=>t+P[k].util,0);
+  const provs=S.proveedores.map(p=>{const its=(p.items||[]).filter(i=>!i.porConfirmar);
+    const c=its.reduce((t,i)=>t+itemSub(i),0), u=its.reduce((t,i)=>t+itemSub(i)*(Number(i.utilidad)||0)/100,0);
+    return `<tr><td>${esc(p.codigo)} · ${esc(p.nombre)}</td><td class="num">${money(c)}</td><td class="num">${money(u)}</td></tr>`;}).join('');
   return `<div class="card">
-    <h2 style="margin-top:0">Datos del evento</h2>
-    <div class="row">${f('nombre','Nombre del evento')}${f('fecha','Fecha','date')}${f('lugar','Lugar')}${f('invitados','Invitados','number')}${f('inicio','Hora de inicio del programa','time')}${f('presupuesto','Presupuesto total (S/)','number')}</div>
-    <p class="msg" style="margin-top:10px">Los cambios se guardan automáticamente.</p>
+    <h2 style="margin-top:0">Utilidades por partida</h2>
+    <p class="msg">Uso interno. La utilidad se suma al precio de cada ítem y no se muestra al cliente.</p>
+    ${filas?`<div class="tablewrap"><table>
+      <thead><tr><th>Partida</th><th class="num">Costo directo</th><th class="num">Utilidad</th><th class="num">Precio al cliente</th></tr></thead>
+      <tbody>${filas}<tr><td><b>Total</b></td><td class="num"><b>${money(tc)}</b></td><td class="num"><b>${money(tu)}</b></td><td class="num"><b>${money(tc+tu)}</b></td></tr></tbody>
+    </table></div>`:'<p class="empty">Aún no hay ítems asignados a partidas.</p>'}
   </div>
   <div class="card" style="margin-top:12px">
-    <h2 style="margin-top:0">Respaldo</h2>
-    <p class="msg">Los datos viven en este navegador. Copia el respaldo y guárdalo para no perder información, o pega uno para restaurarlo.</p>
-    <textarea id="exp" readonly style="min-height:120px;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;margin-top:8px">${esc(JSON.stringify(S,null,2))}</textarea>
-    <div class="row" style="margin-top:8px"><button data-act="copiar">Copiar respaldo</button><button class="primary" data-act="descargarRespaldo">Descargar respaldo (.json)</button></div>
-    <label style="display:block;margin-top:14px;font-size:12px;color:var(--muted)">Restaurar desde un respaldo
-      <textarea id="imp" placeholder="Pega aquí el respaldo"></textarea></label>    <div class="row" style="margin-top:8px"><button data-act="importar">Reemplazar datos con este respaldo</button><button class="danger" data-act="reset">${armed?'Pulsa de nuevo para borrar todo':'Borrar todo'}</button></div>
+    <h2 style="margin-top:0">Utilidad por proveedor</h2>
+    ${provs?`<div class="tablewrap"><table><thead><tr><th>Proveedor</th><th class="num">Costo directo</th><th class="num">Utilidad</th></tr></thead><tbody>${provs}</tbody></table></div>`:'<p class="empty">Sin proveedores.</p>'}
   </div>`;
 }
 
+/* ===== Render y acciones ===== */
+/* Borrado por pestaña. Proveedores nunca se borra desde aquí. Utilidades no tiene data propia. */
+const BORRABLE={cliente:'Borrar datos de cliente, evento y condiciones',cronograma:'Borrar todos los eventos del cronograma',cotizacion:'Borrar partidas manuales y encender todas las partidas'};
+function botonBorrar(){
+  if(!BORRABLE[tab]) return '';
+  const pide=confirmarBorrar===tab;
+  return `<div class="no-print" style="margin-top:20px;border-top:1px solid var(--line);padding-top:12px"><button class="danger" data-act="borrarTab">${pide?'Pulsa de nuevo para confirmar':BORRABLE[tab]}</button></div>`;
+}
+function borrarPestana(t){
+  if(t==='cliente'){S.cliente=structuredClone(DEF.cliente);S.evento=structuredClone(DEF.evento);S.cotiz=structuredClone(DEF.cotiz);}
+  else if(t==='cronograma'){S.cron=[];}
+  else if(t==='cotizacion'){S.extra=[];S.off={};}
+}
 function render(){
   sincronizarHoras();
-  const sugerencias=[...new Set([...CATS,...S.cronograma.map(a=>a.actividad),...S.gastos.map(g=>g.categoria),...S.proveedores.map(p=>p.categoria)].filter(Boolean).map(x=>String(x).trim()).filter(Boolean))];
-  $('#cats').innerHTML=sugerencias.map(c=>`<option value="${esc(c)}">`).join('');
-  $('#nav').innerHTML=TABS.map(([id,l])=>`<button data-act="tab" data-id="${id}" aria-current="${id===tab?'page':'false'}">${l}${id==='comentarios'&&S.comentarios.length?` (${S.comentarios.length})`:''}</button>`).join('');
-  $('#evNombre').textContent=S.evento.nombre||'Nuevo evento';
-  const meta=[fmtFecha(S.evento.fecha),S.evento.lugar,S.evento.invitados?`${S.evento.invitados} invitados`:''].filter(Boolean).join(' · ');
-  $('#evMeta').textContent=meta||'Completa los datos del cliente y del evento con el botón de arriba';
-  const V={resumen:vResumen,cronograma:vCron,gastos:vGastos,proveedores:vProv,presupuesto:vPresupuestoDetallado,cotizacion:vCotizacion,comentarios:vCom,ajustes:vAjustes}[tab];
-  $('#main').innerHTML=(datosAbierto?vDatos():'')+V()+(msg?`<p class="msg" role="status" style="margin-top:12px">${esc(msg)}</p>`:'');
+  const sug=[...new Set([...CATS,...S.proveedores.map(p=>p.categoria)].filter(Boolean))];
+  $('#cats').innerHTML=sug.map(c=>`<option value="${esc(c)}">`).join('');
+  $('#nav').innerHTML=TABS.map(([id,l])=>`<button data-act="tab" data-id="${id}" aria-current="${id===tab?'page':'false'}">${l}</button>`).join('');
+  const meta=[S.evento.nombre,fmtFecha(S.evento.fecha),S.evento.lugar].filter(Boolean).join(' · ');
+  $('#evMeta').textContent=meta||'Completa los datos en la pestaña Cliente';
+  const V={proveedores:vProv,cliente:vCliente,cronograma:vCron,cotizacion:vCotizacion,utilidades:vUtilidades}[tab];
+  const hayItems=S.proveedores.some(p=>(p.items||[]).length);
+  $('#main').innerHTML=V()+botonBorrar()+(tab==='proveedores'&&hayItems?botonFlotante():'')+(msg?`<p class="msg" role="status" style="margin-top:12px">${esc(msg)}</p>`:'');
 }
+
+/* Aviso que se borra solo a los 2 segundos. */
+function toast(texto,tipo){
+  const d=document.createElement('div');
+  d.setAttribute('role','status');
+  d.textContent=texto;
+  const fondo=tipo==='error'?'var(--bad)':'var(--ink)', color=tipo==='error'?'#fff':'var(--bg)';
+  d.style.cssText=`position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:50;background:${fondo};color:${color};font-weight:600;padding:10px 16px;border-radius:8px;font-size:14px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:90vw;text-align:center`;
+  document.body.appendChild(d);
+  setTimeout(()=>d.remove(),2000);
+}
+function descargar(nombre,obj){
+  const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function buscarProv(id){return S.proveedores.find(p=>p.id===id);}
+const NUMS=['cantidad','precio','utilidad','duracion','invitados','admin','contingencia'];
 
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-act]'); if(!b) return;
   const a=b.dataset.act, id=b.dataset.id;
-  if(a==='tab'){tab=id;msg='';armed=false;}
-  else if(a==='editar'){editando=id;abierto=null;}
-  else if(a==='cancelar'){editando=null;}
+  if(a==='tab'){tab=id;msg='';armed=false;confirmarBorrar=null;}
+  else if(a==='del'){S[b.dataset.list]=S[b.dataset.list].filter(x=>x.id!==id);}
+  else if(a==='delitem'){const p=buscarProv(id); if(p) p.items=(p.items||[]).filter(x=>x.id!==b.dataset.i);}
   else if(a==='mover'){
-    const i=S.cronograma.findIndex(x=>x.id===id), j=i+Number(b.dataset.dir);
-    if(i>=0&&j>=0&&j<S.cronograma.length){[S.cronograma[i],S.cronograma[j]]=[S.cronograma[j],S.cronograma[i]];}
-  }
-  else if(a==='abrir'){abierto=abierto===id?null:id;}
-  else if(a==='del'){
-    S[b.dataset.list]=S[b.dataset.list].filter(x=>x.id!==id);
-    if(b.dataset.list==='cronograma'&&abierto===id) abierto=null;
-  }
-  else if(a==='pagado'){const g=S.gastos.find(x=>x.id===id); if(g) g.pagado=b.checked;}
-  else if(a==='abrirCarga'){cargaProv=cargaProv===id?null:id;}
-  else if(a==='cargar'){
-    const p=S.proveedores.find(x=>x.id===id); if(!p) return;
-    const grupos={};
-    document.querySelectorAll(`select[data-itemsel="${id}"]`).forEach(s=>{if(s.value){(grupos[s.value]=grupos[s.value]||[]).push(s.dataset.i);}});
-    const claves=Object.keys(grupos);
-    if(!claves.length){msg='Asigna al menos un ítem a una actividad.';}
-    else{
-      const res=claves.map(ac=>cargarQuote(p,ac,grupos[ac]));
-      msg=res.map(r=>r.msg).join(' ');
-      if(res.some(r=>r.ok)) cargaProv=null;
-    }
-  }
-  else if(a==='addq'){
-    const act=actOf(id), sel=document.getElementById('addq-'+id);
-    if(!act) return;
-    if(!sel||!sel.value){msg='Elige un proveedor del directorio.';}
-    else{const p=S.proveedores.find(x=>x.id===sel.value); const r=p?cargarQuote(p,id,null):{msg:'Proveedor no encontrado.'}; msg=r.msg;}
-  }
-  else if(a==='cargarSel'){
-    const p=S.proveedores.find(x=>x.id===id); if(!p) return;
-    const sel=document.getElementById('bulkact-'+id);
-    const ids=(p.items||[]).filter(i=>picks[i.id]).map(i=>i.id);
-    if(!sel||!sel.value){msg='Elige una actividad.';}
-    else if(!ids.length){msg='Marca al menos un ítem de la tabla.';}
-    else{const r=cargarQuote(p,sel.value,ids); msg=r.msg; if(r.ok){ids.forEach(k=>delete picks[k]); cargaProv=null;}}
+    const i=S.cron.findIndex(x=>x.id===id), j=i+Number(b.dataset.dir);
+    if(i>=0&&j>=0&&j<S.cron.length){[S.cron[i],S.cron[j]]=[S.cron[j],S.cron[i]];}
   }
   else if(a==='todosItems'){
-    const p=S.proveedores.find(x=>x.id===id); if(!p) return;
-    const on=!(p.items||[]).every(i=>picks[i.id]);
-    (p.items||[]).forEach(i=>{picks[i.id]=on;});
+    const its=S.proveedores.flatMap(p=>p.items||[]);
+    const on=!its.every(i=>picks[i.id]);
+    its.forEach(i=>{picks[i.id]=on;});
   }
-  else if(a==='cargaritem'){
-    const p=S.proveedores.find(x=>x.id===id), it=p&&(p.items||[]).find(x=>x.id===b.dataset.i);
-    const sel=document.getElementById('isel-'+b.dataset.i);
-    if(!p||!it) return;
-    if(!sel||!sel.value){msg='Elige una actividad para este ítem.';}
-    else{const r=cargarQuote(p,sel.value,[it.id]); msg=r.msg;}
+  else if(a==='masivoSub'){
+    const v=$('#masivoSub').value, ids=Object.keys(picks).filter(k=>picks[k]);
+    if(!ids.length){msg='Marca al menos un ítem.';}
+    else{S.proveedores.forEach(p=>(p.items||[]).forEach(i=>{if(picks[i.id]) i.sub=v;})); msg=`Partida asignada a ${ids.length} ítem(s).`; picks={};}
   }
-  else if(a==='delitem'){
-    const p=S.proveedores.find(x=>x.id===id); if(p) p.items=(p.items||[]).filter(x=>x.id!==b.dataset.i);
+  else if(a==='masivoUtil'){
+    const u=$('#masivoUtil').value, ids=Object.keys(picks).filter(k=>picks[k]);
+    if(!ids.length){msg='Marca al menos un ítem.';}
+    else if(u===''){msg='Escribe el porcentaje de utilidad.';}
+    else{S.proveedores.forEach(p=>(p.items||[]).forEach(i=>{if(picks[i.id]) i.utilidad=Number(u)||0;})); msg=`Utilidad de ${u} % aplicada a ${ids.length} ítem(s).`; picks={};}
   }
-  else if(a==='itemsel'){
-    const act=actOf(id), q=act&&(act.cotizaciones||[]).find(x=>x.id===b.dataset.q);
-    const it=q&&(q.items||[]).find(x=>x.id===b.dataset.i); if(!it) return;
-    it.sel=b.checked;
+  else if(a==='exportProv'){
+    descargar('data-proveedores-'+new Date().toISOString().slice(0,10)+'.json',{tipo:'proveedores',proveedores:S.proveedores,seq:S.seq});
+    msg='Data de proveedores exportada, con fotos. Compártela con quien tenga el programa en otra laptop.'; render(); return;
   }
-  else if(a==='delq'){
-    const act=actOf(id); if(!act) return;
-    act.cotizaciones=(act.cotizaciones||[]).filter(x=>x.id!==b.dataset.q);
+  else if(a==='elegirProv'){document.getElementById('archivoProv').click(); return;}
+  else if(a==='imprimir'){try{window.print();}catch(err){msg='La impresión no está disponible aquí.';}return;}
+  else if(a==='elegirArchivo'){document.getElementById('archivo').click(); return;}
+  else if(a==='quitarFotoNueva'){delete fotoNueva[id]; pintarDrop(id); return;}
+  else if(a==='borrarTab'){
+    if(confirmarBorrar!==tab){confirmarBorrar=tab; msg='Pulsa de nuevo para confirmar el borrado de esta pestaña.';}
+    else{confirmarBorrar=null; borrarPestana(tab); msg='Datos de esta pestaña borrados. Los proveedores no se tocaron.';}
   }
-  else if(a==='csv'){
-    try{descargarCSVDetallado(); msg='Presupuesto detallado descargado en tu computadora.';}
-    catch(err){msg='No se pudo descargar aquí. Usa Imprimir / guardar PDF.';}
+  else if(a==='borrarTodo'){
+    if(confirmarBorrar!=='todo'){confirmarBorrar='todo'; msg='Esto borra cliente, evento, condiciones, cronograma, partidas manuales, y quita partidas y utilidades de los productos. Los productos y proveedores se conservan. Pulsa de nuevo para confirmar (antes puedes descargar el respaldo).';}
+    else{confirmarBorrar=null; borrarPestana('cliente'); borrarPestana('cronograma'); borrarPestana('cotizacion'); S.proveedores.forEach(p=>(p.items||[]).forEach(i=>{i.sub='';i.utilidad=0;setCargas(i,[]);})); fotoAbierta=null; tab='cliente'; msg='Cotización reiniciada desde cero. Los proveedores se conservan.';}
   }
-  else if(a==='imprimir'){
-    try{window.print();}catch(err){msg='La impresión no está disponible aquí.';}
-    return;
+  else if(a==='cargarSel'){const ids=Object.keys(picks).filter(k=>picks[k]); if(!ids.length){msg='Marca al menos un producto.';} else {const r=cargarAlPresupuesto(ids); if(r.startsWith('Error')){toast('ERROR PARTIDAS NO ASIGNADAS','error');} else {toast(r); msg=''; picks={};}}}
+  else if(a==='quitarSel'){const ids=Object.keys(picks).filter(k=>picks[k]); if(!ids.length){msg='Marca al menos un producto.';} else {msg=quitarDelPresupuesto(ids); picks={};}}
+  else if(a==='utilProv'){
+    const p=buscarProv(id), v=(document.getElementById('utilProv-'+id)||{}).value;
+    if(p&&v===''){msg='Escribe el porcentaje de utilidad.';}
+    else if(p){(p.items||[]).forEach(i=>{i.utilidad=Number(v)||0;}); toast(`Utilidad de ${Number(v)||0} % aplicada a ${(p.items||[]).length} producto(s) de ${p.nombre}.`);}
   }
-  else if(a==='datosToggle'){datosAbierto=!datosAbierto;}
-  else if(a==='elegirArchivo'){
-    document.getElementById('archivo').click(); return;
+  else if(a==='partidaProv'){
+    const p=buscarProv(id), v=(document.getElementById('partProv-'+id)||{}).value;
+    if(p){(p.items||[]).forEach(i=>{i.sub=v; if(!v){setCargas(i,[]);}}); toast(`Partida asignada a ${(p.items||[]).length} producto(s) de ${p.nombre}.`);}
   }
+  else if(a==='imprimirCron'){imprimirCron();}
+  else if(a==='abrirProv'){provAbierto=b.dataset.id; window.scrollTo(0,0);}
+  else if(a==='volverProv'){provAbierto=null; window.scrollTo(0,0);}
+  else if(a==='quitarCot'){const it=itemsDe([b.dataset.i])[0]; if(it){setCargas(it,(it.cargas||[]).filter(l=>l.id!==b.dataset.c)); msg=`"${it.descripcion}" quitado del presupuesto. Sigue en Proveedores.`;}}
+  else if(a==='delExtra'){
+    const k=b.dataset.k, [cat,nom]=k.split('|');
+    S.extra=S.extra.filter(e=>!(e.cap===cat&&e.nombre===nom));
+    S.proveedores.forEach(p=>(p.items||[]).forEach(i=>{if(i.sub===k){i.sub='';setCargas(i,[]);}}));
+    delete S.off[k]; msg=`Partida "${nom}" eliminada. Sus productos quedaron sin partida.`;
+  }
+  else if(a==='verFoto'){fotoAbierta=fotoAbierta===b.dataset.i?null:b.dataset.i;}
+  else if(a==='quitarFoto'){const p=buscarProv(id), i=p&&(p.items||[]).find(x=>x.id===b.dataset.i); if(i){delete i.foto;} fotoAbierta=null;}
   else if(a==='descargarRespaldo'){
-    const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
-    const url=URL.createObjectURL(blob), link=document.createElement('a');
-    link.href=url; link.download='respaldo-aniversario-rae-'+new Date().toISOString().slice(0,10)+'.json';
-    document.body.appendChild(link); link.click(); link.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    descargar('respaldo-cotizador-'+new Date().toISOString().slice(0,10)+'.json',S);
     msg='Respaldo descargado. Guárdalo en un lugar seguro.'; render(); return;
-  }
-  else if(a==='copiar'){
-    navigator.clipboard.writeText($('#exp').value).then(()=>{msg='Respaldo copiado.';render();},()=>{$('#exp').select();msg='Selecciona el texto y cópialo manualmente.';render();});
-    return;
-  }
-  else if(a==='importar'){
-    try{const o=JSON.parse($('#imp').value); if(!o||!o.evento) throw new Error('sin evento'); S=merge(o); S.catalogo=structuredClone(DEF.catalogo); msg='Datos restaurados.';}
-    catch(err){msg='El texto no es un respaldo válido.';}
-  }
-  else if(a==='reset'){
-    if(!armed){armed=true;msg='Pulsa de nuevo para borrar todo.';}
-    else{S=structuredClone(DEF);armed=false;abierto=null;cargaProv=null;msg='Datos borrados.';}
   }
   else return;
   save(); render();
@@ -932,120 +657,129 @@ document.addEventListener('click',e=>{
 
 document.addEventListener('change',e=>{
   const t=e.target;
-  if(t.dataset.pick){picks[t.dataset.i]=t.checked;return;}
-  if(t.id==='archivo'){
+  if(t.id==='filtroSel'){
+    if(t.value==='__manual__'){filtroModo='manual';filtroTexto='';}
+    else {filtroModo='lista';filtroTexto=t.value;}
+    render(); return;
+  }
+  if(t.dataset.cant!==undefined){const it=itemsDe([t.dataset.i])[0], l=it&&(it.cargas||[]).find(x=>x.id===t.dataset.cant); if(l){l.cant=t.value===''?null:(Number(t.value)||0);} save(); render(); return;}
+  if(t.dataset.cargado!==undefined){
+    const p=buscarProv(t.dataset.id), i=p&&(p.items||[]).find(x=>x.id===t.dataset.cargado);
+    if(i){ if(t.checked&&!i.sub){t.checked=false; msg='Asigna una partida antes de cargar este producto.';} else {setCargas(i,t.checked?[...(i.cargas||[]),{id:uid(),cant:null}]:[]);} }
+    save(); render(); return;
+  }
+  else if(t.dataset.fotonueva!==undefined){cargarFotoNueva(t.dataset.fotonueva,t.files&&t.files[0]); t.value=''; return;}
+  if(t.dataset.foto!==undefined){
+    const f=t.files&&t.files[0]; if(!f) return;
+    comprimir(f).then(url=>{const p=buscarProv(t.dataset.id), i=p&&(p.items||[]).find(x=>x.id===t.dataset.foto); if(i){i.foto=url; fotoAbierta=null; msg='Foto guardada. Pulsa el ojo para verla.';} save(); render();}).catch(()=>{msg='No se pudo leer la imagen.'; render();});
+    t.value=''; return;
+  }
+  if(t.dataset.pick!==undefined){picks[t.dataset.pick]=t.checked;return;}
+  if(t.dataset.pc!==undefined){const p=buscarProv(t.dataset.id), i=p&&(p.items||[]).find(x=>x.id===t.dataset.pc); if(i) i.porConfirmar=t.checked;}
+  else if(t.dataset.off!==undefined){S.off[t.dataset.off]=!t.checked;}
+  else if(t.dataset.edit){
+    const f=t.dataset.field; let v=NUMS.includes(f)?Number(t.value)||0:t.value;
+    if(t.dataset.edit==='prov'){const p=buscarProv(t.dataset.id); if(p) p[f]=v;}
+    else if(t.dataset.edit==='item'){const p=buscarProv(t.dataset.id), i=p&&(p.items||[]).find(x=>x.id===t.dataset.i); if(i){i[f]=v; if(f==='sub'&&!v) setCargas(i,[]);}}
+    else if(t.dataset.edit==='cron'){const a=S.cron.find(x=>x.id===t.dataset.id); if(a) a[f]=v;}
+  }
+  else if(t.id==='archivo'){
     const f=t.files&&t.files[0]; if(!f) return;
     f.text().then(txt=>{
-      try{const o=JSON.parse(txt); if(!o||!o.evento) throw new Error('sin evento'); S=merge(o); S.catalogo=structuredClone(DEF.catalogo); msg='Datos restaurados desde el archivo.';}
+      try{const o=JSON.parse(txt); if(!o||!o.evento) throw new Error('x'); S=normalizar(o); msg='Datos restaurados desde el archivo.';}
       catch(err){msg='El archivo no es un respaldo válido.';}
       save(); render();
     });
-    return;
+    t.value=''; return;
   }
-  if(t.dataset.pc){
-    const p=S.proveedores.find(x=>x.id===t.dataset.pc), it=p&&(p.items||[]).find(x=>x.id===t.dataset.i);
-    if(!it) return;
-    it.porConfirmar=t.checked;
-    S.cronograma.forEach(a=>(a.cotizaciones||[]).forEach(q=>{if(q.id===p.id)(q.items||[]).forEach(qi=>{if(qi.id===it.id) qi.porConfirmar=t.checked;});}));
-    save(); render(); return;
-  }
-  if(t.dataset.bulk){document.querySelectorAll(`select[data-itemsel="${t.dataset.bulk}"]`).forEach(s=>s.value=t.value);return;}
-  if(t.dataset.item){
-    const p=S.proveedores.find(x=>x.id===t.dataset.item), it=p&&(p.items||[]).find(x=>x.id===t.dataset.i);
-    if(!it) return;
-    const f=t.dataset.field, v=f==='descripcion'?(String(t.value).trim()||it.descripcion):Math.max(0,Number(t.value)||0);
-    it[f]=v;
-    /* Las cotizaciones ya cargadas en actividades se actualizan con el mismo precio o cantidad. */
-    S.cronograma.forEach(a=>(a.cotizaciones||[]).forEach(q=>{if(q.id===p.id)(q.items||[]).forEach(qi=>{if(qi.id===it.id) qi[f]=v;});}));
-  }
-  /* Subcategoría de un ítem del catálogo: también se aplica a las cotizaciones ya cargadas. */
-  else if(t.dataset.itemsub){
-    const p=S.proveedores.find(x=>x.id===t.dataset.itemsub), it=p&&(p.items||[]).find(x=>x.id===t.dataset.i);
-    if(!it) return;
-    it.sub=t.value;
-    S.cronograma.forEach(a=>(a.cotizaciones||[]).forEach(q=>{if(q.id===p.id)(q.items||[]).forEach(qi=>{if(qi.id===it.id) qi.sub=t.value;});}));
-  }
-  /* Subcategoría de un ítem ya cargado en una actividad (solo esa cotización). */
-  else if(t.dataset.qdesc){
-    const a=actOf(t.dataset.qdesc), q=a&&(a.cotizaciones||[]).find(x=>x.id===t.dataset.q), qi=q&&(q.items||[]).find(x=>x.id===t.dataset.i);
-    if(!qi) return;
-    qi.descripcion=String(t.value).trim()||qi.descripcion;
-  }
-  else if(t.dataset.qsub){
-    const a=actOf(t.dataset.qsub), q=a&&(a.cotizaciones||[]).find(x=>x.id===t.dataset.q), qi=q&&(q.items||[]).find(x=>x.id===t.dataset.i);
-    if(!qi) return;
-    qi.sub=t.value;
-  }
-  else if(t.dataset.upd){
-    const it=S[t.dataset.upd].find(x=>x.id===t.dataset.id);
-    if(!it) return;
-    let v=t.type==='number'?(Number(t.value)||0):t.value;
-    if(t.dataset.field==='duracion'&&v<5){v=5;msg='La duración mínima es 5 minutos.';}
-    if(t.dataset.field==='actividad'){v=String(t.value).trim()||it.actividad;}
-    it[t.dataset.field]=v;
-  }
-  else if(t.dataset.evento){
-    S.evento[t.dataset.evento]=t.type==='number'?(Number(t.value)||0):t.value;
+  else if(t.id==='archivoProv'){
+    const f=t.files&&t.files[0]; if(!f) return;
+    f.text().then(txt=>{
+      try{
+        const o=JSON.parse(txt); if(!o||!Array.isArray(o.proveedores)) throw new Error('x');
+        o.proveedores.forEach(np=>{
+          const ex=S.proveedores.find(p=>p.codigo===np.codigo);
+          if(ex){Object.assign(ex,{nombre:np.nombre,contacto:np.contacto,categoria:np.categoria,items:np.items||[]});}
+          else{S.proveedores.push({...np,id:uid(),codigo:np.codigo||codigoNuevo(),items:(np.items||[]).map(i=>({utilidad:0,...i}))});}
+        });
+        S=normalizar(S);
+        const its=o.proveedores.reduce((n,p)=>n+(p.items||[]).length,0), fotos=o.proveedores.reduce((n,p)=>n+(p.items||[]).filter(i=>i.foto).length,0);
+        msg=`Data cargada: ${o.proveedores.length} proveedor(es), ${its} producto(s), ${fotos} foto(s).`;
+      }catch(err){msg='El archivo no contiene proveedores válidos.';}
+      save(); render();
+    });
+    t.value=''; return;
   }
   else return;
   save(); render();
 });
 
 document.addEventListener('submit',e=>{
-  e.preventDefault();
-  const f=e.target, k=f.dataset.form; if(!k) return;
-  const d=Object.fromEntries(new FormData(f).entries());
-  const id=uid(); let aviso='';
-  if(k==='cronograma'){
-    const pos=d.despuesDe==='__inicio__'?0:d.despuesDe?S.cronograma.findIndex(x=>x.id===d.despuesDe)+1:S.cronograma.length;
-    const prev=pos>0?S.cronograma[pos-1]:null;
-    if(d.horaInicio&&prev&&toMin(d.horaInicio)-toMin(prev.hora)<5){
-      aviso='La actividad anterior quedaría con menos de 5 minutos. Elige una hora más tarde.';
-    }else{
-      const nueva={id,hora:'',duracion:Number(d.duracion)||0,actividad:d.actividad.trim(),responsable:(d.responsable||'').trim(),estado:d.estado,notas:(d.notas||'').trim(),tercerizado:d.tercerizado==='on',cotizaciones:[]};
-      if(d.horaInicio){ if(prev) prev.duracion=toMin(d.horaInicio)-toMin(prev.hora); else S.evento.inicio=d.horaInicio; }
-      S.cronograma.splice(pos,0,nueva);
-      const pSel=d.proveedorId?S.proveedores.find(x=>x.id===d.proveedorId):null;
-      if(pSel){const r=cargarQuote(pSel,id,null); aviso=r.msg; abierto=id;}
-      else abierto=nueva.tercerizado?id:abierto;
-    }
-  }
-  else if(k==='datos'){
-    S.cliente={nombre:(d.cliente||'').trim(),empresa:(d.empresa||'').trim(),ruc:(d.ruc||'').trim(),contacto:(d.contacto||'').trim(),telefono:(d.telefono||'').trim(),correo:(d.correo||'').trim()};
-    S.evento=Object.assign({},S.evento,{nombre:(d.nombreEvento||'').trim()||S.evento.nombre,fecha:d.fecha||'',lugar:(d.lugar||'').trim(),invitados:Number(d.invitados)||0});
-    datosAbierto=false; msg='Datos guardados.';
-  }
-  else if(k==='editar'){
-    const a=actOf(d.id); if(!a) return;
-    const idx=S.cronograma.indexOf(a), prev=idx>0?S.cronograma[idx-1]:null;
-    if(prev&&d.hora&&toMin(d.hora)-toMin(prev.hora)<5){
-      aviso='La actividad anterior quedaría con menos de 5 minutos. Elige una hora más tarde.';
-    }else{
-      if(d.hora&&d.hora!==a.hora){ if(idx===0) S.evento.inicio=d.hora; else prev.duracion=toMin(d.hora)-toMin(prev.hora); }
-      Object.assign(a,{duracion:Number(d.duracion)||0,actividad:d.actividad.trim(),responsable:(d.responsable||'').trim(),estado:d.estado,notas:(d.notas||'').trim(),tercerizado:d.tercerizado==='on'});
-      editando=null; aviso='Actividad actualizada.';
-    }
-  }
-  else if(k==='gasto-acto'){
-    S.gastos.push({id,concepto:d.concepto.trim(),categoria:catDe(d.sub),sub:d.sub||'',proveedor:(d.proveedor||'').trim(),estimado:Number(d.estimado)||0,real:d.real?Number(d.real)||0:0,actividadId:d.actividadId,pagado:false});
-  }
-  else if(k==='gastos'){
-    S.gastos.push({id,concepto:d.concepto.trim(),categoria:catDe(d.sub),sub:d.sub||'',proveedor:(d.proveedor||'').trim(),estimado:Number(d.estimado)||0,real:d.real?Number(d.real)||0:0,actividadId:d.actividadId||'',pagado:false});
-  }
-  else if(k==='proveedores'){
-    S.proveedores.push({id,categoria:(d.categoria||'Sin categoría').trim(),nombre:d.nombre.trim(),contacto:(d.contacto||'').trim(),calificacion:Number(d.calificacion)||3,ventajas:(d.ventajas||'').trim(),desventajas:(d.desventajas||'').trim(),items:[]});
+  const f=e.target; if(!f.dataset.form) return; e.preventDefault();
+  const k=f.dataset.form, d=new FormData(f);
+  if(k==='proveedor'){
+    S.proveedores.push({id:uid(),codigo:codigoNuevo(),categoria:d.get('categoria').trim(),nombre:d.get('nombre').trim(),contacto:d.get('contacto')||'',items:[]});
+    msg='Proveedor creado con código único.';
   }
   else if(k==='item'){
-    const p=S.proveedores.find(x=>x.id===d.provId); if(!p) return;
-    p.items=[...(p.items||[]),{id,descripcion:d.descripcion.trim(),unidad:(d.unidad||'').trim(),cantidad:Number(d.cantidad)||0,precio:Number(d.precio)||0,sub:d.sub||''}];
+    const p=buscarProv(d.get('provId'));
+    if(p){p.items=p.items||[];const it={id:uid(),codigo:codigoItemNuevo(p),cargado:false,cargas:[],copias:0,descripcion:d.get('descripcion').trim(),unidad:d.get('unidad')||'',cantidad:Number(d.get('cantidad'))||0,precio:Number(d.get('precio'))||0,utilidad:Number(d.get('utilidad'))||0,sub:d.get('sub')||'',porConfirmar:false}; if(fotoNueva[p.id]) it.foto=fotoNueva[p.id]; delete fotoNueva[p.id]; p.items.push(it);}
+    msg='Ítem agregado.';
   }
-  else if(k==='partida'){ S.partidas.push({id,nombre:d.nombre.trim()}); }
-  else if(k==='comentarios') S.comentarios.push({id,autor:d.autor.trim(),seccion:d.seccion,texto:d.texto.trim(),fecha:new Date().toISOString()});
-  else return;
-  msg=aviso; armed=false;
-  f.reset(); save(); render();
+  else if(k==='cliente'){
+    S.cliente={nombre:d.get('cliente')||'',empresa:d.get('empresa')||'',ruc:d.get('ruc')||'',contacto:d.get('contacto')||'',telefono:d.get('telefono')||'',correo:d.get('correo')||''};
+    S.evento={...S.evento,nombre:d.get('nombreEvento')||'',fecha:d.get('fecha')||'',lugar:d.get('lugar')||'',invitados:Number(d.get('invitados'))||0,inicio:d.get('inicio')||'09:00'};
+    S.cotiz={admin:Number(d.get('admin'))||0,contingencia:Number(d.get('contingencia'))||0,igv:!!d.get('igv')};
+    msg='Datos guardados.';
+  }
+  else if(k==='cron'){
+    S.cron.push({id:uid(),evento:d.get('evento').trim(),horaFija:d.get('hora')||'',duracion:Number(d.get('duracion'))||30,comentario:d.get('comentario')||'',indicaciones:d.get('indicaciones')||''});
+    msg='Evento agregado al cronograma.';
+  }
+  else if(k==='extra'){
+    const cap=d.get('cap'), nombre=d.get('nombre').trim();
+    if(S.extra.some(x=>x.cap===cap&&x.nombre===nombre)){msg='Esa partida ya existe en el capítulo.';}
+    else{S.extra.push({cap,nombre,unid:d.get('unid')||''}); msg=`Partida "${nombre}" agregada.`;}
+  }
+  save(); render();
 });
 
-$('#cats').innerHTML=CATS.map(c=>`<option value="${esc(c)}">`).join('');
+function pintarDrop(pid){const z=document.querySelector(`[data-drop="${pid}"]`); if(z) z.innerHTML=zonaFoto(pid);}
+function cargarFotoNueva(pid,f){
+  if(!f||!f.type.startsWith('image/')){msg='Ese archivo no es una imagen.'; render(); return;}
+  comprimir(f).then(url=>{fotoNueva[pid]=url; pintarDrop(pid);}).catch(()=>{msg='No se pudo leer la imagen.'; render();});
+}
+document.addEventListener('dragover',e=>{if(e.target.closest&&e.target.closest('[data-drop]')) e.preventDefault();});
+document.addEventListener('drop',e=>{
+  const z=e.target.closest&&e.target.closest('[data-drop]'); if(!z) return;
+  e.preventDefault(); cargarFotoNueva(z.dataset.drop, e.dataTransfer.files[0]);
+});
+
+document.addEventListener('input',e=>{
+  if(e.target.id==='filtroManual'){filtroTexto=e.target.value; const r=$('#resultados'); if(r) r.innerHTML=resultados();}
+});
+
+/* Al imprimir o guardar PDF, todas las partidas se muestran desplegadas con su detalle. */
+let _abiertos=[];
+window.addEventListener('beforeprint',()=>{_abiertos=[...document.querySelectorAll('details')].map(d=>{const was=d.open; d.open=true; return {d,was};});});
+window.addEventListener('afterprint',()=>{_abiertos.forEach(x=>{x.d.open=x.was;}); _abiertos=[];});
+/* Cronograma imprimible: solo se muestra al imprimir. */
+document.body.insertAdjacentHTML('beforeend','<style>#cron-print{display:none}@media print{body.imprimir-cron>*:not(#cron-print){display:none!important}body.imprimir-cron #cron-print{display:block!important;font-size:12px}#cron-print h1{font-size:18px;margin:0 0 6px}#cron-print table{width:100%;border-collapse:collapse;margin-top:10px}#cron-print th,#cron-print td{border-bottom:1px solid #ccc;padding:5px 6px;text-align:left;vertical-align:top}#cron-print th{font-size:11px;text-transform:uppercase}#cron-print td.num{white-space:nowrap}}</style><div id="cron-print"></div>');
+function imprimirCron(){
+  sincronizarHoras();
+  const e=S.evento, c=S.cliente;
+  const filas=S.cron.map(a=>`<tr><td class="num">${esc(a.hora||'—')} – ${esc(finHora(a.hora,a.duracion))}</td><td><b>${esc(a.evento)}</b></td><td class="num">${Number(a.duracion)||0} min</td><td>${esc(a.comentario||'')}</td><td>${esc(a.indicaciones||'')}</td></tr>`).join('');
+  document.getElementById('cron-print').innerHTML=`<h1>Cronograma del evento</h1>
+    <p><b>${esc(e.nombre)||'Evento'}</b> · ${esc(fmtFecha(e.fecha))||'Fecha por definir'} · ${Number(e.invitados)||0} invitados · ${esc(e.lugar)||'Lugar por definir'}</p>
+    <p>Cliente: ${esc(c.nombre)||'Por definir'}${c.empresa?' · '+esc(c.empresa):''}</p>
+    <table><thead><tr><th>Horario</th><th>Evento</th><th>Duración</th><th>Comentarios</th><th>Indicaciones</th></tr></thead>
+    <tbody>${filas||'<tr><td colspan="5">Sin eventos</td></tr>'}</tbody></table>`;
+  document.body.classList.add('imprimir-cron');
+  window.addEventListener('afterprint',()=>document.body.classList.remove('imprimir-cron'),{once:true});
+  window.print();
+}
+S=load();
 render();
 </script>
+</body>
+</html>
